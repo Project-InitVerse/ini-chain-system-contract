@@ -36,13 +36,13 @@ contract Params {
     uint public constant MarginLockPeriod = 0;
     uint public constant WithdrawLockPeriod = 0;
     uint public constant PercentChangeLockPeriod = 0;*/
-    uint256 public constant PosMinMargin = 5000 ether;
-    uint256 public constant PunishAmount = 100 ether;
+    uint256 public constant PosMinMargin = 50 ether;
+    uint256 public constant PunishAmount = 1 ether;
 
-    uint256 public constant JailPeriod = 86400;
-    uint256 public constant MarginLockPeriod = 403200;
-    uint256 public constant WithdrawLockPeriod = 86400;
-    uint256 public constant PercentChangeLockPeriod = 86400;
+    uint256 public constant JailPeriod = 10;
+    uint256 public constant MarginLockPeriod = 20;
+    uint256 public constant WithdrawLockPeriod = 20;
+    uint256 public constant PercentChangeLockPeriod = 20;
     uint256 constant PERCENT_BASE = 10000;
 
     modifier onlyMiner() {

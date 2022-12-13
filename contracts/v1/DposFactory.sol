@@ -17,7 +17,10 @@ contract DposFactory is Params, IDposFactory {
 
     uint256 public count;
     uint256 public backupCount;
-
+    uint256 constant first_part_percent= 10;
+    uint256 constant second_part_percent = 40;
+    uint256 constant third_part_percent = 50;
+    uint256 constant precision= 100;
     address[] activeValidators;
     address[] backupValidators;
     mapping(address => uint8) actives;
@@ -153,15 +156,15 @@ contract DposFactory is Params, IDposFactory {
         address[] memory _topValidators = new address[](_count);
 
         uint256 _index = 0;
-        SortedLinkedList.List storage _lista = topVotePools;
+        //SortedLinkedList.List storage _lista = topVotePools;
 
         uint256 _size = count;
-        IDposPledge cur = _lista.head;
+        IDposPledge cur = _list.head;
         while (_size > 0 && cur != IDposPledge(address(0))) {
             _topValidators[_index] = cur.validator();
             _index++;
             _size--;
-            cur = _lista.next[cur];
+            cur = _list.next[cur];
         }
 
         return _topValidators;
@@ -204,9 +207,9 @@ contract DposFactory is Params, IDposFactory {
         uint _left = msg.value.add(rewardLeft);
 
         // 10% to backups 40% validators share by vote 50% validators share
-        uint _firstPart = _left.mul(10).div(100);
-        uint _secondPartTotal = _left.mul(40).div(100);
-        uint _thirdPart = _left.mul(50).div(100);
+        uint _firstPart = _left.mul(first_part_percent).div(precision);
+        uint _secondPartTotal = _left.mul(second_part_percent).div(precision);
+        uint _thirdPart = _left.mul(third_part_percent).div(precision);
 
         if (backupValidators.length > 0) {
             uint _totalBackupVote = 0;

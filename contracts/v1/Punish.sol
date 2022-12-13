@@ -37,10 +37,9 @@ contract Punish is Params, IPunish {
     }
 
     function initialize() external onlyNotInitialized {
-        punishThreshold = 24;
-        removeThreshold = 48;
-        decreaseRate = 24;
-
+        punishThreshold = 4;
+        removeThreshold = 8;
+        decreaseRate = 4;
         initialized = true;
     }
 
