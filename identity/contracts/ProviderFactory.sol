@@ -14,6 +14,7 @@ contract Provider is IProvider,ReentrancyGuard{
     uint256 public used_storage = 0;
     address public override owner;
     string  public override info;
+    bool public override isActive;
     IProviderFactory provider_factory;
     constructor(uint256 cpu_count, uint256 mem_count, uint256 storage_count, address _owner, string memory provider_info){
         provider_factory = IProviderFactory(msg.sender);
@@ -22,6 +23,7 @@ contract Provider is IProvider,ReentrancyGuard{
         total_storage = storage_count;
         owner = _owner;
         info = provider_info;
+        isActive = true;
     }
     modifier onlyFactory(){
         require(msg.sender == address(provider_factory));
@@ -29,6 +31,10 @@ contract Provider is IProvider,ReentrancyGuard{
     }
     modifier onlyOwner{
         require(msg.sender == owner,"Provider:only owner can use this function");
+        _;
+    }
+    modifier onlyActive{
+        require(isActive);
         _;
     }
     function changeProviderInfo(string memory new_info) public onlyOwner{
@@ -40,7 +46,9 @@ contract Provider is IProvider,ReentrancyGuard{
     function getTotalResource() external override view returns(uint256,uint256,uint256){
         return (total_cpu,total_mem,total_storage);
     }
-
+    function changeActive(bool active) external onlyFactory{
+        isActive = active;
+    }
     function consumeResource(uint256 consume_cpu,uint256 consume_mem,uint256 consume_storage) external override onlyFactory nonReentrant{
         require(consume_cpu <= total_cpu - used_cpu,"Provider:cpu is not enough");
         require(consume_mem <= total_mem - used_mem,"Provider:mem is not enough");
@@ -68,7 +76,7 @@ contract Provider is IProvider,ReentrancyGuard{
             provider_factory.changeProviderUsedResource(used_cpu,used_mem,used_storage,true);
         }
     }
-    function updateResource(uint256 new_cpu_count,uint256 new_mem_count, uint256 new_sto_count) external onlyOwner{
+    function updateResource(uint256 new_cpu_count,uint256 new_mem_count, uint256 new_sto_count) external onlyOwner onlyActive{
         provider_factory.changeProviderResource(total_cpu,total_mem,total_storage,false);
         total_cpu = used_cpu + new_cpu_count;
         total_mem = used_mem + new_mem_count;
@@ -106,6 +114,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         uint256 left_mem;
         uint256 left_sto;
         string info;
+        bool is_active;
         address[] audits;
     }
     modifier onlyAdmin() {
@@ -132,6 +141,22 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         providers[msg.sender] = provider_contract;
         provider_pledge[msg.sender] = msg.value;
         return address(provider_contract);
+    }
+    function closeProvider()public onlyProvider{
+        (uint256 temp_total_cpu,uint256 temp_total_mem,uint256 temp_total_sto) = providers[msg.sender].getTotalResource();
+        (uint256 temp_left_cpu,uint256 temp_left_mem,uint256 temp_left_sto) = providers[msg.sender].getLeftResource();
+        require(temp_left_cpu == temp_total_cpu);
+        require(temp_left_mem == temp_total_mem);
+        require(temp_left_sto == temp_total_sto);
+        providers[msg.sender].changeActive(false);
+        total_cpu = total_cpu - temp_total_cpu;
+        total_mem = total_mem - temp_total_mem;
+        total_storage = total_storage - temp_total_sto;
+        payable(msg.sender).transfer(provider_pledge[msg.sender]);
+    }
+    function reOpenProvider()public payable onlyProvider{
+        require(msg.value > MIN_VALUE_TO_BE_PROVIDER);
+        providers[msg.sender].changeActive(true);
     }
     function changeOrderFactory(address new_order_factory) public onlyAdmin{
         require(new_order_factory != address(0));
@@ -216,6 +241,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
             _providerInfo[i].provider = address(providerArray[start+i]);
             _providerInfo[i].provider_owner = providerArray[start+i].owner();
             _providerInfo[i].info = providerArray[start+i].info();
+            _providerInfo[i].is_active = providerArray[start+i].isActive();
             _providerInfo[i].audits = IAuditorFactory(auditor_factory).getProviderAuditors(_providerInfo[i].provider);
         }
         return _providerInfo;

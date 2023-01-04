@@ -25,4 +25,6 @@ interface IProvider{
     function recoverResource(uint256, uint256, uint256) external;
     function owner() external view returns(address);
     function info() external view returns(string memory);
+    function changeActive(bool active) external;
+    function isActive()external view returns(bool);
 }
