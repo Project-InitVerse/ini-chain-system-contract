@@ -6,11 +6,13 @@ import "./InterfaceAuditor.sol";
 contract Auditor is IAuditor,ReentrancyGuard{
     address public override admin;
     IAuditorFactory public auditor_factory;
+    string public override name;
     mapping(address=>providerState) public provider_state;
     mapping(address=>string) provider_json;
-    constructor(address _admin){
+    constructor(address _admin,string memory _name){
         admin = _admin;
         auditor_factory = IAuditorFactory(msg.sender);
+        name = _name;
     }
     modifier onlyAdmin(){
         require(msg.sender == admin,"Auditor:only admin can use this function");
@@ -26,7 +28,7 @@ contract Auditor is IAuditor,ReentrancyGuard{
         provider_json[provider] = json_check;
         auditor_factory.reportProviderState(provider,_state);
     }
-    function getProviderCheckJson(address provider) external view returns(string memory){
+    function getProviderCheckJson(address provider) external view override returns(string memory){
         if(provider_state[provider] == providerState.unSet){
             return "{}";
         }else{
@@ -44,6 +46,7 @@ contract AuditorFactory is IAuditorFactory,ReentrancyGuard {
     mapping(address=>IAuditor)public auditors;
     mapping(address=>mapping(address=>providerState)) public provider_auditor_state;
     mapping(address=>address[]) public provider_auditor;
+    mapping(string=>address) public name_auditor;
 
     constructor (address _admin){
         admin = _admin;
@@ -60,11 +63,13 @@ contract AuditorFactory is IAuditorFactory,ReentrancyGuard {
         require(msg.sender == admin, "admin  only");
         _;
     }
-    function createAuditor()external payable onlyNotAuditor nonReentrant returns(address){
+    function createAuditor(string memory _name)external payable onlyNotAuditor nonReentrant returns(address){
         require(msg.value >MIN_VALUE_TO_BE_AUDITOR,"AuditorFactory:you must pledge money to be a auditor");
-        Auditor auditor_contract = new Auditor{salt:keccak256(abi.encodePacked(msg.sender,"auditor"))}(msg.sender);
+        require(name_auditor[_name] == address(0),"AuditorFactory:name has been used");
+        Auditor auditor_contract = new Auditor{salt:keccak256(abi.encodePacked(msg.sender,"auditor"))}(msg.sender,_name);
         auditors[msg.sender] = auditor_contract;
         auditor_pledge[msg.sender] = msg.value;
+        name_auditor[_name] = msg.sender;
         return address(auditor_contract);
     }
     function changeAdmin(address new_admin) public onlyAdmin{
@@ -98,7 +103,16 @@ contract AuditorFactory is IAuditorFactory,ReentrancyGuard {
         }
         return _provider_auditors;
     }
-    function getProviderJson(address auditor,address provider) external view returns(string memory){
+    function getAuditorsJson(address[] memory _auditors,address provider)public view returns(string[] memory,string[] memory){
+        string[] memory _providerJsons = new string[](_auditors.length);
+        string[] memory _auditor_names = new string[](_auditors.length);
+        for (uint256 i = 0;i < _auditors.length;i++){
+            _providerJsons[i] = IAuditor(_auditors[i]).getProviderCheckJson(provider);
+            _auditor_names[i] = IAuditor(_auditors[i]).name();
+        }
+        return (_auditor_names,_providerJsons);
+    }
+    function getProviderJson(address auditor,address provider) external view override returns(string memory){
         require(auditor != address(0));
         return IAuditor(auditor).getProviderCheckJson(provider);
     }

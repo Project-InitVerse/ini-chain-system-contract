@@ -25,6 +25,8 @@ contract Provider is IProvider,ReentrancyGuard{
         info = provider_info;
         isActive = true;
     }
+    event ProviderResourceChange(address);
+    event ProviderActiveChange(address,bool);
     modifier onlyFactory(){
         require(msg.sender == address(provider_factory));
         _;
@@ -46,8 +48,9 @@ contract Provider is IProvider,ReentrancyGuard{
     function getTotalResource() external override view returns(uint256,uint256,uint256){
         return (total_cpu,total_mem,total_storage);
     }
-    function changeActive(bool active) external onlyFactory{
+    function changeActive(bool active) external override onlyFactory{
         isActive = active;
+        emit ProviderActiveChange(address(this),active);
     }
     function consumeResource(uint256 consume_cpu,uint256 consume_mem,uint256 consume_storage) external override onlyFactory nonReentrant{
         require(consume_cpu <= total_cpu - used_cpu,"Provider:cpu is not enough");
@@ -58,6 +61,7 @@ contract Provider is IProvider,ReentrancyGuard{
         used_mem = used_mem + consume_mem;
         used_storage = used_storage + consume_storage;
         provider_factory.changeProviderUsedResource(used_cpu,used_mem,used_storage,true);
+        emit ProviderResourceChange(address(this));
     }
     function recoverResource(uint256 consumed_cpu,uint256 consumed_mem,uint256 consumed_storage) external override onlyFactory nonReentrant{
         if((consumed_cpu > used_cpu) ||
@@ -75,6 +79,7 @@ contract Provider is IProvider,ReentrancyGuard{
             used_storage = used_storage - consumed_storage;
             provider_factory.changeProviderUsedResource(used_cpu,used_mem,used_storage,true);
         }
+        emit ProviderResourceChange(address(this));
     }
     function updateResource(uint256 new_cpu_count,uint256 new_mem_count, uint256 new_sto_count) external onlyOwner onlyActive{
         provider_factory.changeProviderResource(total_cpu,total_mem,total_storage,false);
@@ -82,6 +87,10 @@ contract Provider is IProvider,ReentrancyGuard{
         total_mem = used_mem + new_mem_count;
         total_storage = used_storage + new_sto_count;
         provider_factory.changeProviderResource(total_cpu,total_mem,total_storage,true);
+        emit ProviderResourceChange(address(this));
+    }
+    function getDetail() external view returns(address,uint256,uint256,uint256,uint256,uint256,uint256,bool,string memory){
+        return (owner,total_cpu,total_mem,total_storage,total_cpu - used_cpu, total_mem - used_mem,total_storage - used_storage,isActive,info);
     }
 }
 contract ProviderFactory is IProviderFactory,ReentrancyGuard {
@@ -117,6 +126,9 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         bool is_active;
         address[] audits;
     }
+    event ProviderCreate(address);
+
+
     modifier onlyAdmin() {
         require(msg.sender == admin, "admin  only");
         _;
@@ -140,6 +152,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         providerArray.push(provider_contract);
         providers[msg.sender] = provider_contract;
         provider_pledge[msg.sender] = msg.value;
+        emit ProviderCreate(address(provider_contract));
         return address(provider_contract);
     }
     function closeProvider()public onlyProvider{
@@ -215,6 +228,9 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
     function getProviderInfoLength() public view returns(uint256){
         return providerArray.length;
+    }
+     function getTotalDetail() external view returns(uint256,uint256,uint256,uint256,uint256,uint256){
+        return (total_cpu,total_mem,total_storage,total_used_cpu, total_used_mem,total_used_storage);
     }
     function getProviderInfo(uint256 start,uint256 limit) public view returns(providerInfo[] memory){
         require(providerArray.length > 0);
