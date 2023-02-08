@@ -4,7 +4,6 @@ import "./ReentrancyGuard.sol";
 import "./InterfaceProvider.sol";
 import "./InterfaceAuditor.sol";
 import "./InterfaceOrderFactory.sol";
-
 contract Provider is IProvider,ReentrancyGuard{
     uint256 public total_cpu;
     uint256 public total_mem;
@@ -175,6 +174,10 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         require(new_order_factory != address(0));
         order_factory = new_order_factory;
     }
+    function changeAuditorFactory(address new_audit_factory) public onlyAdmin{
+        require(new_audit_factory != address(0));
+        auditor_factory = new_audit_factory;
+    }
     function changeAdmin(address new_admin) public onlyAdmin{
         require(admin != address(0));
         admin = new_admin;
@@ -215,13 +218,13 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         }
     }
     function consumeResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external override nonReentrant{
-        require(IOrderFactory(order_factory).checkIsOrder(msg.sender) == 1,"ProviderFactory : not order user");
+        require(IOrderFactory(order_factory).checkIsOrder(msg.sender) >0,"ProviderFactory : not order user");
         require(account != address(0));
         require(address(providers[IProvider(account).owner()]) == account);
         IProvider(account).consumeResource(cpu_count,mem_count,storage_count);
     }
     function recoverResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external override nonReentrant{
-        require(IOrderFactory(order_factory).checkIsOrder(msg.sender)==1,"ProviderFactory : not order user");
+        require(IOrderFactory(order_factory).checkIsOrder(msg.sender)>0,"ProviderFactory : not order user");
         require(account != address(0));
         require(address(providers[IProvider(account).owner()]) == account);
         IProvider(account).recoverResource(cpu_count,mem_count,storage_count);
@@ -231,6 +234,24 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
      function getTotalDetail() external view returns(uint256,uint256,uint256,uint256,uint256,uint256){
         return (total_cpu,total_mem,total_storage,total_used_cpu, total_used_mem,total_used_storage);
+    }
+    function getProviderSingle(address _provider_contract) public view returns(providerInfo memory){
+        require(address(providers[IProvider(_provider_contract).owner()]) == _provider_contract,"ProviderFactory: provider_contract error");
+        providerInfo memory _providerInfo;
+        (uint256 temp_total_cpu,uint256 temp_total_mem,uint256 temp_total_sto) =IProvider(_provider_contract).getTotalResource();
+        (uint256 temp_left_cpu,uint256 temp_left_mem,uint256 temp_left_sto) = IProvider(_provider_contract).getLeftResource();
+        _providerInfo.total_cpu = temp_total_cpu;
+        _providerInfo.total_mem = temp_total_mem;
+        _providerInfo.total_sto = temp_total_sto;
+        _providerInfo.left_cpu = temp_left_cpu;
+        _providerInfo.left_mem = temp_left_mem;
+        _providerInfo.left_sto = temp_left_sto;
+        _providerInfo.provider = _provider_contract;
+        _providerInfo.provider_owner = IProvider(_provider_contract).owner();
+        _providerInfo.info = IProvider(_provider_contract).info();
+        _providerInfo.is_active =IProvider(_provider_contract).isActive();
+        _providerInfo.audits = IAuditorFactory(auditor_factory).getProviderAuditors(_providerInfo.provider);
+        return _providerInfo;
     }
     function getProviderInfo(uint256 start,uint256 limit) public view returns(providerInfo[] memory){
         require(providerArray.length > 0);
