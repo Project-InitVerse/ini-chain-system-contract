@@ -3,14 +3,13 @@ pragma solidity ^0.8.0;
 
 import "./Params.sol";
 
-import "./library/SafeMath.sol";
+
 import "./library/ReentrancyGuard.sol";
 import "./interfaces/IDposPledge.sol";
 import "./interfaces/IDposFactory.sol";
 import "./interfaces/IPunish.sol";
 
 contract DposPledge is Params, ReentrancyGuard, IDposPledge {
-    using SafeMath for uint256;
 
     uint256 constant COEFFICIENT = 1e18;
 
@@ -39,13 +38,6 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
     uint256 public exitBlk;
 
-    struct VoterInfo {
-        uint256 amount;
-        uint256 rewardDebt;
-        uint256 withdrawPendingAmount;
-        uint256 withdrawExitBlock;
-    }
-
     struct PercentChange {
         uint256 newPercent;
         uint256 submitBlk;
@@ -58,7 +50,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
     modifier onlyValidPercent(uint256 _percent) {
         //zero represents null value, trade as invalid
-        require(_percent <= PERCENT_BASE.mul(3).div(10), "Invalid percent");
+        require(_percent <= PERCENT_BASE*3/10, "Invalid percent");
         _;
     }
 
@@ -104,7 +96,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
     function confirmPercentChange() external onlyValidator onlyValidPercent(pendingPercentChange.newPercent) {
         require(
             pendingPercentChange.submitBlk > 0 &&
-                block.number.sub(pendingPercentChange.submitBlk) > PercentChangeLockPeriod,
+                block.number-pendingPercentChange.submitBlk > PercentChangeLockPeriod,
             "Interval not long enough"
         );
 
@@ -116,16 +108,16 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
     }
 
     function isIdleStateLike() internal view returns (bool) {
-        return state == State.Idle || (state == State.Jail && block.number.sub(punishBlk) > JailPeriod);
+        return state == State.Idle || (state == State.Jail && block.number-punishBlk > JailPeriod);
     }
 
     function addMargin() external payable onlyValidator {
         require(isIdleStateLike(), "Incorrect state");
-        require(exitBlk == 0 || block.number.sub(exitBlk) > MarginLockPeriod, "Interval not long enough");
+        require(exitBlk == 0 || block.number-exitBlk > MarginLockPeriod, "Interval not long enough");
         require(msg.value > 0, "Value should not be zero");
 
         exitBlk = 0;
-        margin = margin.add(msg.value);
+        margin = margin+msg.value;
         emit AddMargin(msg.sender, msg.value);
         if (margin >= PosMinMargin) {
             state = State.Ready;
@@ -163,7 +155,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
         uint256 _punishAmount = margin >= PunishAmount ? PunishAmount : margin;
         if (_punishAmount > 0) {
-            margin = margin.sub(_punishAmount);
+            margin = margin-(_punishAmount);
             sendValue(payable(address(0)), _punishAmount);
             emit Punish(validator, _punishAmount);
         }
@@ -176,7 +168,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
         uint256 _incoming = validatorReward < PunishAmount ? validatorReward : PunishAmount;
 
-        validatorReward = validatorReward.sub(_incoming);
+        validatorReward = validatorReward-(_incoming);
         if (_incoming > 0) {
             sendValue(payable(address(0)), _incoming);
             emit RemoveIncoming(validator, _incoming);
@@ -198,7 +190,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
     function withdrawMargin() external nonReentrant onlyValidator {
         require(isIdleStateLike(), "Incorrect state");
-        require(exitBlk > 0 && block.number.sub(exitBlk) > MarginLockPeriod, "Interval not long enough");
+        require(exitBlk > 0 && block.number-(exitBlk) > MarginLockPeriod, "Interval not long enough");
         require(margin > 0, "No more margin");
 
         exitBlk = 0;
@@ -210,11 +202,11 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
     }
 
     function receiveReward() external payable onlyValidatorsContract {
-        uint256 _rewardForValidator = msg.value.mul(percent).div(PERCENT_BASE);
-        validatorReward = validatorReward.add(_rewardForValidator);
+        uint256 _rewardForValidator = msg.value*(percent)/(PERCENT_BASE);
+        validatorReward = validatorReward+(_rewardForValidator);
 
         if (totalVote > 0) {
-            accRewardPerShare = msg.value.sub(_rewardForValidator).mul(COEFFICIENT).div(totalVote).add(
+            accRewardPerShare = (msg.value-_rewardForValidator)*(COEFFICIENT)/(totalVote)+(
                 accRewardPerShare
             );
         }
@@ -232,41 +224,41 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
     function getValidatorPendingReward() external view returns (uint256) {
         uint256 _poolPendingReward = validatorsContract.pendingReward(IDposPledge(address(this)));
-        uint256 _rewardForValidator = _poolPendingReward.mul(percent).div(PERCENT_BASE);
+        uint256 _rewardForValidator = _poolPendingReward*(percent)/(PERCENT_BASE);
 
-        return validatorReward.add(_rewardForValidator);
+        return validatorReward+(_rewardForValidator);
     }
 
-    function getPendingReward(address _voter) external view returns (uint256) {
+    function getPendingReward(address _voter) external view override returns (uint256) {
         uint256 _poolPendingReward = validatorsContract.pendingReward(IDposPledge(address(this)));
-        uint256 _rewardForValidator = _poolPendingReward.mul(percent).div(PERCENT_BASE);
+        uint256 _rewardForValidator = _poolPendingReward*(percent)/(PERCENT_BASE);
 
         uint256 _share = accRewardPerShare;
         if (totalVote > 0) {
-            _share = _poolPendingReward.sub(_rewardForValidator).mul(COEFFICIENT).div(totalVote).add(_share);
+            _share = (_poolPendingReward-_rewardForValidator)*(COEFFICIENT)/(totalVote)+(_share);
         }
 
-        return _share.mul(voters[_voter].amount).div(COEFFICIENT).sub(voters[_voter].rewardDebt);
+        return _share*(voters[_voter].amount)/(COEFFICIENT)-(voters[_voter].rewardDebt);
     }
 
     function deposit() external payable nonReentrant {
         validatorsContract.withdrawReward();
 
-        uint256 _pendingReward = accRewardPerShare.mul(voters[msg.sender].amount).div(COEFFICIENT).sub(
+        uint256 _pendingReward = accRewardPerShare*(voters[msg.sender].amount)/(COEFFICIENT)-(
             voters[msg.sender].rewardDebt
         );
 
         if (msg.value > 0) {
-            voters[msg.sender].amount = voters[msg.sender].amount.add(msg.value);
-            voters[msg.sender].rewardDebt = voters[msg.sender].amount.mul(accRewardPerShare).div(COEFFICIENT);
-            totalVote = totalVote.add(msg.value);
+            voters[msg.sender].amount = voters[msg.sender].amount+(msg.value);
+            voters[msg.sender].rewardDebt = voters[msg.sender].amount*(accRewardPerShare)/(COEFFICIENT);
+            totalVote = totalVote+(msg.value);
             emit Deposit(msg.sender, msg.value);
 
             if (state == State.Ready) {
                 validatorsContract.improveRanking();
             }
         } else {
-            voters[msg.sender].rewardDebt = voters[msg.sender].amount.mul(accRewardPerShare).div(COEFFICIENT);
+            voters[msg.sender].rewardDebt = voters[msg.sender].amount*(accRewardPerShare)/(COEFFICIENT);
         }
 
         if (_pendingReward > 0) {
@@ -281,20 +273,20 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
 
         validatorsContract.withdrawReward();
 
-        uint256 _pendingReward = accRewardPerShare.mul(voters[msg.sender].amount).div(COEFFICIENT).sub(
+        uint256 _pendingReward = accRewardPerShare*(voters[msg.sender].amount)/(COEFFICIENT)-(
             voters[msg.sender].rewardDebt
         );
 
-        totalVote = totalVote.sub(_amount);
+        totalVote = totalVote-(_amount);
 
-        voters[msg.sender].amount = voters[msg.sender].amount.sub(_amount);
-        voters[msg.sender].rewardDebt = voters[msg.sender].amount.mul(accRewardPerShare).div(COEFFICIENT);
+        voters[msg.sender].amount = voters[msg.sender].amount-(_amount);
+        voters[msg.sender].rewardDebt = voters[msg.sender].amount*(accRewardPerShare)/(COEFFICIENT);
 
         if (state == State.Ready) {
             validatorsContract.lowerRanking();
         }
 
-        voters[msg.sender].withdrawPendingAmount = voters[msg.sender].withdrawPendingAmount.add(_amount);
+        voters[msg.sender].withdrawPendingAmount = voters[msg.sender].withdrawPendingAmount+(_amount);
         voters[msg.sender].withdrawExitBlock = block.number;
 
         sendValue(payable(msg.sender), _pendingReward);
@@ -304,7 +296,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
     }
 
     function withdraw() external nonReentrant {
-        require(block.number.sub(voters[msg.sender].withdrawExitBlock) > WithdrawLockPeriod, "Interval too small");
+        require(block.number-(voters[msg.sender].withdrawExitBlock) > WithdrawLockPeriod, "Interval too small");
         require(voters[msg.sender].withdrawPendingAmount > 0, "Value should not be zero");
 
         uint256 _amount = voters[msg.sender].withdrawPendingAmount;
@@ -314,7 +306,9 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
         sendValue(payable(msg.sender), _amount);
         emit Withdraw(msg.sender, _amount);
     }
-
+    function getVoterInfo(address _user)external view override returns (VoterInfo memory){
+        return voters[_user];
+    }
     /**
      * @dev Replacement for Solidity's `transfer`: sends `amount` wei to
      * `recipient`, forwarding all available gas and reverting on errors.

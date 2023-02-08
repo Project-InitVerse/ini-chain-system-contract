@@ -10,7 +10,19 @@ import "./interfaces/IDposFactory.sol";
 
 contract DposFactory is Params, IDposFactory {
     using SortedLinkedList for SortedLinkedList.List;
-
+    struct ValidatorInfo{
+        address validator;
+        address validator_contract;
+        uint256 voting_amount;
+    }
+    struct ValidatorUserInfo{
+        address validator;
+        address validator_contract;
+        uint256 voting_amount;
+        address user;
+        uint256 user_voting_amount;
+        uint256 user_unpay_reward;
+    }
     address public admin;
 
     uint256 public count;
@@ -289,6 +301,38 @@ contract DposFactory is Params, IDposFactory {
 
         SortedLinkedList.List storage _list = topVotePools;
         _list.removeRanking(_pool);
+    }
+    function getAllValidate() public view returns(ValidatorInfo[] memory){
+        uint256 length = allValidators.length;
+        ValidatorInfo[] memory _validators =new ValidatorInfo[](length);
+        for (uint256 i = 0;i < length;i++){
+            _validators[i].validator = allValidators[i];
+            _validators[i].validator_contract = address(dposPledges[_validators[i].validator]);
+            _validators[i].voting_amount = dposPledges[allValidators[i]].totalVote();
+        }
+        return _validators;
+    }
+    function getUserValidate(address user) public view returns (ValidatorUserInfo[] memory){
+        uint256 _count = 0;
+        for (uint256 i = 0;i < allValidators.length;i++){
+            if (dposPledges[allValidators[i]].getVoterInfo(user).amount > 0){
+                _count = _count + 1;
+            }
+        }
+        ValidatorUserInfo[] memory _validators_user =new ValidatorUserInfo[](_count);
+        uint256 index = 0;
+        for (uint256 i = 0;i < allValidators.length;i++){
+            if (dposPledges[allValidators[i]].getVoterInfo(user).amount > 0){
+                _validators_user[index].validator = allValidators[i];
+                _validators_user[index].validator_contract = address(dposPledges[allValidators[i]]);
+                _validators_user[index].voting_amount = dposPledges[allValidators[i]].totalVote();
+                _validators_user[index].user = user;
+                _validators_user[index].user_unpay_reward = dposPledges[allValidators[i]].getPendingReward(user);
+                _validators_user[index].user_voting_amount = dposPledges[allValidators[i]].getVoterInfo(user).amount;
+                index = index + 1;
+            }
+        }
+        return _validators_user;
     }
     /*
     //TODO : for test
