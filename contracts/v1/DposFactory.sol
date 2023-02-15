@@ -38,7 +38,7 @@ contract DposFactory is Params, IDposFactory {
     address[] public allValidators;
     mapping(address => IDposPledge) public override dposPledges;
 
-    uint256 rewardLeft;
+    uint256 public rewardLeft;
     mapping(IDposPledge => uint) public override pendingReward;
     mapping(uint256 => mapping(Operation => bool)) operationsDone;
 

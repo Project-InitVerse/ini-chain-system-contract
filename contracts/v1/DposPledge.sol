@@ -30,7 +30,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
     mapping(address => VoterInfo) public voters;
 
     //use to calc voter's reward
-    uint256 accRewardPerShare;
+    uint256 public accRewardPerShare;
 
     uint256 public override totalVote;
 
@@ -77,6 +77,7 @@ contract DposPledge is Params, ReentrancyGuard, IDposPledge {
         validator = _validator;
         percent = _percent;
         state = _state;
+        totalVote = 1000;
     }
 
     // only for chain hard fork to init poa validators
