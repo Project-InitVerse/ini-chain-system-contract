@@ -10,4 +10,11 @@ contract MockOrder is IOrderFactory{
     function checkIsOrder(address orderAddress)external override view returns(uint256){
         return cc[orderAddress];
     }
+    function get_minimum_deposit_amount() external view  returns (uint256){
+        return 1 ether;
+    }
+    function getOrder(uint256 orderId) external view returns(Order memory){
+        Order memory ret;
+        return ret;
+    }
 }
