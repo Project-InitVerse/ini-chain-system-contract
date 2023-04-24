@@ -139,8 +139,11 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         admin = _admin;
         order_factory = _order_factory;
         auditor_factory = _auditor_factory;
+        min_value_tobe_provider = 1000 ether;
+        max_value_tobe_provider = 10000 ether;
     }
-    uint256 constant public MIN_VALUE_TO_BE_PROVIDER = 0 ether;
+    uint256 public min_value_tobe_provider;
+    uint256 public max_value_tobe_provider;
     poaResource total_all;
     poaResource total_used;
     mapping(address => IProvider) public providers;
@@ -172,8 +175,15 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
     function addMargin() public  payable{
         require(providers[msg.sender] != IProvider(address(0)),"ProviderFactory: only provider owner use this function");
+        poaResource memory temp_total = providers[msg.sender].getTotalResource();
+        (uint256 limit_min,uint256 limit_max) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
+        require(provider_pledge[msg.sender] + msg.value >= limit_min &&provider_pledge[msg.sender] + msg.value <= limit_max,"ProviderFactory: you must pledge money to be a provider");
         provider_pledge[msg.sender] =provider_pledge[msg.sender] + msg.value;
         providers[msg.sender].triggerMargin();
+    }
+    function changeProviderLimit(uint256 _new_min, uint256 _new_max) public onlyAdmin{
+        min_value_tobe_provider = _new_min;
+        max_value_tobe_provider = _new_max;
     }
     function createNewProvider(uint256 cpu_count,
         uint256 mem_count,
@@ -182,7 +192,8 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         string memory provider_info)
     onlyNotProvider
     public payable returns(address){
-        require(msg.value > clacProviderAmount(cpu_count,mem_count,storage_count),"ProviderFactory: you must pledge money to be a provider");
+        (uint256 limit_min,uint256 limit_max) = calcProviderAmount(cpu_count,mem_count);
+        require(msg.value >= limit_min && msg.value <= limit_max,"ProviderFactory: you must pledge money to be a provider");
         Provider provider_contract = new Provider(cpu_count,mem_count,storage_count,msg.sender,region,provider_info);
 
         total_all.cpu_count = total_all.cpu_count + cpu_count;
@@ -208,13 +219,16 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
 
         payable(msg.sender).transfer(provider_pledge[msg.sender]);
     }
-    function clacProviderAmount(uint256 cpu_count,uint256 memory_count,uint256 storage_amount)public pure returns(uint256){
-        return MIN_VALUE_TO_BE_PROVIDER;
+    function calcProviderAmount(uint256 cpu_count,uint256 memory_count)public view returns(uint256,uint256){
+        uint256 temp_mem = memory_count/1024/1024/1024/4;
+        uint256 temp_cpu = cpu_count/1000;
+        uint256 calc_temp = temp_cpu;
+        if(temp_cpu > temp_mem){
+            calc_temp = temp_mem;
+        }
+        return (calc_temp*min_value_tobe_provider,calc_temp*max_value_tobe_provider);
     }
-    function reOpenProvider()public payable onlyProvider{
-        //TODO change state
-        require(msg.value > MIN_VALUE_TO_BE_PROVIDER);
-    }
+
     function changeOrderFactory(address new_order_factory) public onlyAdmin{
         require(new_order_factory != address(0));
         order_factory = new_order_factory;
@@ -292,7 +306,10 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         return _providerInfos;
     }
     function getProviderInfo(uint256 start,uint256 limit) public view returns(providerInfos[] memory){
-        require(providerArray.length > 0);
+        if (providerArray.length == 0){
+            providerInfos[] memory _providerInfos_empty;
+            return _providerInfos_empty;
+        }
         uint256 _limit= limit;
         if(limit == 0){
             require(start == 0,"ProviderFactory:get all must start with zero");
