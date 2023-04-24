@@ -7,4 +7,7 @@ interface IValFactory {
     function punish_address() external view returns(address);
     function removeRankingList() external ;
     function exitProduceBlock() external;
+    function validator_lock_time() external view returns(uint256);
+    function validator_punish_interval() external view returns(uint256);
+    function validator_punish_start_limit() external view returns(uint256);
 }

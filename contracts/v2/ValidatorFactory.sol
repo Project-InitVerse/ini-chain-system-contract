@@ -14,9 +14,9 @@ contract Validator is Ownable,IValidator{
     uint256 public override create_time;
     uint256 public punish_start_time;
     //TODO:formal
-    IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
+    //IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
     //TODO:for test
-    //IValFactory public factory_address;
+    IValFactory public factory_address;
     uint256 public override pledge_amount;
     ValidatorState public override state;
     constructor(){
@@ -24,7 +24,7 @@ contract Validator is Ownable,IValidator{
         pledge_amount = 0;
         state = ValidatorState.Prepare;
         //TODO:for test
-        //factory_address = IValFactory(msg.sender);
+        factory_address = IValFactory(msg.sender);
     }
     modifier onlyFactory(){
         require(msg.sender == address(factory_address));
@@ -34,7 +34,7 @@ contract Validator is Ownable,IValidator{
         state = _state;
     }
     function addMargin() public payable override onlyFactory{
-        require(msg.value == (factory_address).validator_pledgeAmount(),"posMargin error");
+        require(msg.value+ pledge_amount <= (factory_address).validator_pledgeAmount(),"posMargin must less than max validator pledge amount");
         pledge_amount += msg.value;
     }
     function sendValue(address payable recipient, uint256 amount) internal {
@@ -57,8 +57,8 @@ contract Validator is Ownable,IValidator{
             if(state == ValidatorState.Watch || state == ValidatorState.Punish){
                 state = ValidatorState.Ready;
             }
-            if(block.timestamp - punish_start_time > 48 hours && punish_start_time != 0){
-                if(block.timestamp - last_punish_time > 1 hours){
+            if(block.timestamp - punish_start_time > factory_address.validator_punish_start_limit() && punish_start_time != 0){
+                if(block.timestamp - last_punish_time > factory_address.validator_punish_interval()){
                     uint256 PunishAmount = (factory_address).getPunishAmount();
                     uint256 _punishAmount = pledge_amount >=PunishAmount  ? PunishAmount : pledge_amount;
                     if (_punishAmount > 0) {
@@ -76,11 +76,11 @@ contract Validator is Ownable,IValidator{
             punish_start_time = 0;
             IValFactory(factory_address).removeRankingList();
         }else{
-            if(block.timestamp - punish_start_time > 48 hours && punish_start_time != 0){
+            if(block.timestamp - punish_start_time > factory_address.validator_punish_start_limit() && punish_start_time != 0){
                 if(state != ValidatorState.Exit){
                     state = ValidatorState.Punish;
                 }
-                if(block.timestamp - last_punish_time > 1 hours){
+                if(block.timestamp - last_punish_time > factory_address.validator_punish_interval()){
                     uint256 PunishAmount = (factory_address).getPunishAmount();
                     uint256 _punishAmount = pledge_amount >=PunishAmount  ? PunishAmount : pledge_amount;
                     if (_punishAmount > 0) {
@@ -97,6 +97,7 @@ contract Validator is Ownable,IValidator{
             }else{
                 if(state != ValidatorState.Exit){
                     state = ValidatorState.Watch;
+                    punish_start_time = block.timestamp;
                 }
             }
 
@@ -104,8 +105,9 @@ contract Validator is Ownable,IValidator{
 
     }
     function exitVote() public onlyOwner{
-        require((block.timestamp - create_time) > (365 days));
+        require((block.timestamp - create_time) > factory_address.validator_lock_time(),"you cant exit util lock time end");
         pledge_amount = 0;
+        sendValue(payable(owner()),address(this).balance);
     }
 }
 
@@ -119,11 +121,18 @@ contract ValidatorFactory  {
     uint256 public validator_percent;
     uint256 public all_percent;
     address public team_address;
+
     address public punish_address;
     uint256 public punish_percent;
     uint256 public punish_all_percent;
+
     address public admin_address;
     address public providerFactory;
+
+    uint256 public validator_lock_time;
+    uint256 public validator_punish_start_limit;
+    uint256 public validator_punish_interval;
+
     bool public initialized;
     mapping(address=>IValidator) public whiteList_validator;
     struct ValidatorInfo{
@@ -153,6 +162,15 @@ contract ValidatorFactory  {
     }
     function setProviderFactory(address _provider_factory) public onlyAdmin{
         providerFactory = _provider_factory;
+    }
+    function changeValidatorLockTime(uint256 _new_lock) public onlyAdmin{
+        validator_lock_time = _new_lock;
+    }
+    function changeValidatorPunishStartTime(uint256 _new_start_limit) public onlyAdmin{
+        validator_punish_start_limit = _new_start_limit;
+    }
+    function changeValidatorPunishInterval(uint256 _new_interval) public onlyAdmin{
+        validator_punish_interval =_new_interval;
     }
     function changeAdminAddress(address _new_admin) public onlyAdmin{
         require(_new_admin != address(0));
@@ -185,6 +203,11 @@ contract ValidatorFactory  {
         team_percent = 400;
         validator_percent = 1000;
         all_percent = 10000;
+        validator_lock_time = 365 days;
+        validator_punish_start_limit = 48 hours;
+        validator_punish_interval = 1 hours;
+        punish_percent = 100;
+        punish_all_percent = 10000;
     }
     function initialize(address[]memory _init_validator,address _admin) external onlyNotInitialize{
         initialized = true;
@@ -217,6 +240,10 @@ contract ValidatorFactory  {
         all_validators.push(new_validator);
         return address(new_validator);
     }
+    function MarginCalls()public payable {
+        require(owner_validator[msg.sender] != IValidator(address(0)),"ValidatorFactory : you account is not a validator");
+        owner_validator[msg.sender].addMargin{value:msg.value}();
+    }
     function removeRankingList()public onlyValidator{
         IValidator _pool = IValidator(msg.sender);
         SortLinkedList.List storage _list = validatorPunishPools;
@@ -230,7 +257,7 @@ contract ValidatorFactory  {
     }
     function tryPunish(address val)public
     //TODO for formal
-    onlyMiner
+    //onlyMiner
     {
         if(val != address(0)){
             if(whiteList_validator[val] == IValidator(address(0))){
