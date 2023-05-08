@@ -17,6 +17,11 @@ interface IProviderFactory{
     function consumeResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external;
     // @notice Order use to recover provider resource
     function recoverResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external;
+    function punish_start_limit() external view returns(uint256);
+    function punish_interval() external view returns(uint256);
+    function getPunishAmount(uint256 punish_amount) external view returns(uint256);
+    function punish_address() external view returns(address);
+
 }
     struct poaResource{
         uint256 cpu_count;
@@ -26,6 +31,7 @@ interface IProviderFactory{
     enum ProviderState{
         Running,
         Punish,
+        Pause,
         Stop
     }
     struct providerInfo{
@@ -49,4 +55,7 @@ interface IProvider{
     function challengeProvider() external;
     function getDetail() external view returns(providerInfo memory);
     function triggerMargin() external;
+    function withdrawMargin() external;
+    function remove_punish() external;
+    function punish()external;
 }
