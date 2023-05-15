@@ -12,7 +12,7 @@ contract Provider is IProvider,ReentrancyGuard{
     poaResource public used;
     poaResource public lock;
     bool public challenge;
-    ProviderState state;
+    ProviderState public state;
     address public override owner;
     string public region;
 
@@ -53,28 +53,28 @@ contract Provider is IProvider,ReentrancyGuard{
         left.storage_count = total.storage_count - used.storage_count;
         return left;
     }
-    function triggerMargin() external onlyFactory{
+    function triggerMargin() external override onlyFactory{
         margin_block = block.number;
         last_margin_time = block.timestamp;
     }
-    function withdrawMargin() external onlyFactory{
+    function withdrawMargin() external override onlyFactory{
         sendValue(payable(owner),address(this).balance);
     }
-    function remove_punish() external onlyFactory{
+    function removePunish() external override onlyFactory{
         punish_start_time = 0;
         last_punish_time = 0;
         if(state == ProviderState.Punish){
             state = ProviderState.Running;
         }
     }
-    function punish()external onlyFactory{
+    function punish()external override onlyFactory{
         if(block.timestamp - punish_start_time > provider_factory.punish_start_limit() && punish_start_time != 0){
 
             if(block.timestamp - last_punish_time > provider_factory.punish_interval()){
                 uint256 PunishAmount = (provider_factory).getPunishAmount(punish_start_margin_amount);
                 uint256 _punishAmount = address(this).balance >=PunishAmount  ? PunishAmount : address(this).balance;
                 if (_punishAmount > 0) {
-                    sendValue(payable((provider_factory).punish_address()), _punishAmount);
+                    sendValue(payable(provider_factory.punish_address()), _punishAmount);
                 }
                 last_punish_time = block.timestamp;
             }
@@ -196,23 +196,36 @@ contract Provider is IProvider,ReentrancyGuard{
         provider_factory.changeProviderResource(total.cpu_count,total.memory_count,total.storage_count,true);
         emit ProviderResourceChange(address(this));
     }
+    function startChallenge(bool whether_start) external override onlyFactory{
+        if(whether_start){
+            last_challenge_time = block.timestamp;
+        }
+        challenge = whether_start;
+    }
 }
 contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     using SortLinkedList for SortLinkedList.List;
-    constructor (address _admin,address _order_factory,address _auditor_factory){
-        admin = _admin;
-        order_factory = _order_factory;
-        auditor_factory = _auditor_factory;
+    constructor (){
+
+    }
+    function initialize(address _admin) external onlyNotInitialize{
+        initialized = true;
+        admin= _admin;
+        punish_address = _admin;
         min_value_tobe_provider = 1000 ether;
         max_value_tobe_provider = 10000 ether;
         punish_percent = 100;
         punish_all_percent = 10000;
         punish_start_limit = 48 hours;
         punish_interval = 1 days;
-        punish_address = _admin;
+        decimal_cpu = 1000;
+        decimal_memory = 1024 * 1024*1024*4;
     }
     uint256 public min_value_tobe_provider;
     uint256 public max_value_tobe_provider;
+
+    uint256 public decimal_cpu;
+    uint256 public decimal_memory;
 
     uint256 public punish_percent;
     uint256 public punish_all_percent;
@@ -220,15 +233,17 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     uint256 public override punish_interval;
     address public override punish_address;
 
+    bool public initialized;
+
     poaResource public total_all;
     poaResource public total_used;
     mapping(address => IProvider) public providers;
     //mapping(address => uint256) public provider_pledge;
-    IProvider[] providerArray;
+    IProvider[] provider_array;
     address public order_factory;
     address public admin;
     address public auditor_factory;
-    SortLinkedList.List providerPunishPools;
+    SortLinkedList.List provider_punish_pools;
     struct providerInfos{
         address provider_contract;
         providerInfo info;
@@ -236,7 +251,6 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         address[] audits;
     }
     event ProviderCreate(address);
-
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "admin  only");
@@ -248,6 +262,10 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
     modifier onlyProvider(){
         require(providers[IProvider(msg.sender).owner()] != IProvider(address(0)),"ProviderFactory: only provider can use this function");
+        _;
+    }
+    modifier onlyNotInitialize(){
+        require(!initialized,"ProviderFactory:this contract has been initialized");
         _;
     }
     modifier onlyNotProvider(){
@@ -270,7 +288,10 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         punish_start_limit = _new_punish_start_limit;
         punish_interval = _new_punish_interval;
     }
-
+    function changeDecimal(uint256 new_cpu_decimal,uint256 new_memory_decimal) external onlyAdmin{
+        decimal_cpu = new_cpu_decimal;
+        decimal_memory = new_memory_decimal;
+    }
     function addMargin() public  payable{
         require(providers[msg.sender] != IProvider(address(0)),"ProviderFactory: only provider owner use this function");
         poaResource memory temp_total = providers[msg.sender].getTotalResource();
@@ -298,7 +319,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         total_all.memory_count  = total_all.memory_count  + mem_count;
         total_all.storage_count= total_all.storage_count + storage_count;
 
-        providerArray.push(provider_contract);
+        provider_array.push(provider_contract);
         providers[msg.sender] = provider_contract;
         if(msg.value>0){
             (bool sent, ) = (address(provider_contract)).call{value: msg.value}("");
@@ -321,8 +342,8 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         providers[msg.sender].withdrawMargin();
     }
     function calcProviderAmount(uint256 cpu_count,uint256 memory_count)public view returns(uint256,uint256){
-        uint256 temp_mem = memory_count/1024/1024/1024/4;
-        uint256 temp_cpu = cpu_count/1000;
+        uint256 temp_mem = memory_count/decimal_memory;
+        uint256 temp_cpu = cpu_count/decimal_cpu;
         uint256 calc_temp = temp_cpu;
         if(temp_cpu > temp_mem){
             calc_temp = temp_mem;
@@ -390,7 +411,24 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         IProvider(account).recoverResource(cpu_count,mem_count,storage_count);
     }
     function getProviderInfoLength() public view returns(uint256){
-        return providerArray.length;
+        return provider_array.length;
+    }
+    function whetherCanPOR(address provider_owner) external view returns(bool){
+        if(providers[provider_owner] == IProvider(address(0))){
+            return false;
+        }
+        poaResource memory temp_total = (providers[provider_owner]).getTotalResource();
+        (uint256 limit_min,) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
+        if(limit_min >= min_value_tobe_provider){
+            return true;
+        }
+        return false;
+    }
+    function changeProviderState(address provider_owner,bool whether_start) external {
+        if(providers[provider_owner] == IProvider(address(0))){
+            return ;
+        }
+        providers[provider_owner].startChallenge(whether_start);
     }
      function getTotalDetail() external view returns(poaResource memory,poaResource memory){
         return (total_all,total_used);
@@ -407,53 +445,62 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         return _providerInfos;
     }
     function getProviderInfo(uint256 start,uint256 limit) public view returns(providerInfos[] memory){
-        if (providerArray.length == 0){
+        if (provider_array.length == 0){
             providerInfos[] memory _providerInfos_empty;
             return _providerInfos_empty;
         }
         uint256 _limit= limit;
         if(limit == 0){
             require(start == 0,"ProviderFactory:get all must start with zero");
-            _limit = providerArray.length;
+            _limit = provider_array.length;
         }
-        require(start < providerArray.length,"ProviderFactory:start must below providerArray length");
-        uint256 _count = providerArray.length - start;
-        if (providerArray.length - start > _limit){
+        require(start < provider_array.length,"ProviderFactory:start must below provider_array length");
+        uint256 _count = provider_array.length - start;
+        if (provider_array.length - start > _limit){
             _count = _limit;
         }
         providerInfos[] memory _providerInfos =new providerInfos[](_count);
         for(uint256 i = 0;i < _count;i++){
-            _providerInfos[i].info = IProvider(providerArray[i]).getDetail();
-            _providerInfos[i].provider_contract = address(providerArray[i]);
+            _providerInfos[i].info = IProvider(provider_array[i]).getDetail();
+            _providerInfos[i].provider_contract = address(provider_array[i]);
             if(auditor_factory != address(0)){
-                _providerInfos[i].audits = IAuditorFactory(auditor_factory).getProviderAuditors(address(providerArray[i]));
+                _providerInfos[i].audits = IAuditorFactory(auditor_factory).getProviderAuditors(address(provider_array[i]));
             }
-            _providerInfos[i].margin_amount = address(providerArray[i]).balance;
+            _providerInfos[i].margin_amount = address(provider_array[i]).balance;
         }
         return _providerInfos;
     }
 
     function removePunishList(address provider) onlyMiner external {
-        SortLinkedList.List storage _list = providerPunishPools;
+        SortLinkedList.List storage _list = provider_punish_pools;
         _list.removeRanking(providers[provider]);
-        providers[provider].remove_punish();
+        providers[provider].removePunish();
     }
-    function try_punish(address new_provider) onlyMiner public{
+    function tryPunish(address new_provider)
+    //TODO formal
+    onlyMiner
+    public{
         if(new_provider != address(0)){
             require(providers[new_provider] != IProvider(address(0)),"ProviderFactory: not validator");
-            SortLinkedList.List storage _list = providerPunishPools;
-            _list.improveRanking(providers[new_provider]);
+            poaResource memory temp_total = (providers[new_provider]).getTotalResource();
+            (uint256 limit_min,) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
+            if(limit_min != 0){
+                SortLinkedList.List storage _list = provider_punish_pools;
+                _list.improveRanking(providers[new_provider]);
+            }
         }
-        SortLinkedList.List storage _providerPunishPool = providerPunishPools;
+
+        SortLinkedList.List storage _providerPunishPool = provider_punish_pools;
+        console.log(_providerPunishPool.length);
         IProvider _cur = _providerPunishPool.head;
         while (_cur != IProvider(address(0))) {
             _cur.punish();
             _cur = _providerPunishPool.next[_cur];
         }
     }
-    function getPunishAmount(uint256 punish_amount) external view returns(uint256){
+    function getPunishAmount(uint256 punish_amount) external override view returns(uint256){
         uint256 temp_punish = punish_amount;
-        poaResource memory temp_total = providers[msg.sender].getTotalResource();
+        poaResource memory temp_total = IProvider(msg.sender).getTotalResource();
         (uint256 limit_min,) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
         if(punish_amount < limit_min){
             temp_punish = limit_min;

@@ -1,4 +1,4 @@
-import type {ValidatorFactory,Validator} from "../../src/types";
+import type {ValidatorFactory,Validator,MockProviderFactory} from "../../src/types";
 const {ethers,network}=require('hardhat')
 import {expect} from 'chai';
 import { BigNumber } from "ethers";
@@ -6,12 +6,12 @@ import exp from "constants";
 
 
 describe('Validator test',function(){
-  let validator1:any,validator2:any,admin_change:any,admin:any,punish_address:any;
+  let validator1:any,validator2:any,admin_change:any,admin:any,punish_address:any,provider:any;
   let whiteList:any;
   let zeroAddress = '0x0000000000000000000000000000000000000000';
 
   beforeEach(async function (){
-    [validator1,validator2,admin,admin_change,punish_address] = await ethers.getSigners();
+    [validator1,validator2,admin,admin_change,punish_address,provider] = await ethers.getSigners();
     //console.log(validator1.address)
     let whiteListTemp = await ethers.getSigners();
 
@@ -115,5 +115,21 @@ describe('Validator test',function(){
     await expect(this.valFactory.connect(validator1).MarginCalls({value:ethers.utils.parseEther("1")})).to.be.revertedWith('posMargin must less than max validator pledge amount')
     await this.valFactory.connect(validator1).MarginCalls({value:ethers.utils.parseEther("0.01")});
     expect(await validator1_contract.pledge_amount()).to.equal(ethers.utils.parseEther("0.99"))
+  })
+  it('challenge',async function(){
+    await this.valFactory.initialize(whiteList,admin.address);
+    this.provider_factory = await (await ethers.getContractFactory('MockProviderFactory')).deploy();
+
+    await this.valFactory.connect(admin).setProviderFactory(this.provider_factory .address);
+    await this.valFactory.challengeProvider(provider.address,10,"www.baidu.com");
+    let index = await this.valFactory.provider_index(provider.address);
+    expect(await this.valFactory.provider_index(provider.address)).to.equal(1);
+    let challenge_info = await this.valFactory.provider_challenge_info(provider.address,(index-1)%10);
+    expect(challenge_info.state).to.equal(1);
+    expect(challenge_info.url).to.equal("www.baidu.com");
+    await this.valFactory.challengeFinish(provider.address,20,3,3,2);
+    expect(await this.valFactory.provider_index(provider.address)).to.equal(1);
+    challenge_info = await this.valFactory.provider_challenge_info(provider.address,(index-1)%10);
+    expect(challenge_info.state).to.equal(2);
   })
 })

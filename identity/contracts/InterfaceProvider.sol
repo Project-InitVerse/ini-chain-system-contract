@@ -56,6 +56,7 @@ interface IProvider{
     function getDetail() external view returns(providerInfo memory);
     function triggerMargin() external;
     function withdrawMargin() external;
-    function remove_punish() external;
+    function removePunish() external;
     function punish()external;
+    function startChallenge(bool) external;
 }

@@ -5,6 +5,7 @@ import "./utils/Ownable.sol";
 import "./interface/IValidator.sol";
 import "./interface/IValFactory.sol";
 import "./library/SortList.sol";
+import "./interface/IProviderFactory.sol";
 import "hardhat/console.sol";
 
 
@@ -14,9 +15,9 @@ contract Validator is Ownable,IValidator{
     uint256 public override create_time;
     uint256 public punish_start_time;
     //TODO:formal
-    //IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
+    IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
     //TODO:for test
-    IValFactory public factory_address;
+    //IValFactory public factory_address;
     uint256 public override pledge_amount;
     ValidatorState public override state;
     constructor(){
@@ -24,7 +25,7 @@ contract Validator is Ownable,IValidator{
         pledge_amount = 0;
         state = ValidatorState.Prepare;
         //TODO:for test
-        factory_address = IValFactory(msg.sender);
+        //factory_address = IValFactory(msg.sender);
     }
     modifier onlyFactory(){
         require(msg.sender == address(factory_address));
@@ -127,7 +128,6 @@ contract ValidatorFactory  {
     uint256 public punish_all_percent;
 
     address public admin_address;
-    address public providerFactory;
 
     uint256 public validator_lock_time;
     uint256 public validator_punish_start_limit;
@@ -135,6 +135,43 @@ contract ValidatorFactory  {
 
     bool public initialized;
     mapping(address=>IValidator) public whiteList_validator;
+
+    uint256 public current_challenge_provider_count;
+    uint256 public max_challenge_percent;
+    uint256 public challenge_all_percent;
+    uint256 public max_challenge_time;
+    uint256 public max_provider_start_challenge_time;
+    //TODO:formal
+    IProviderFactory public constant provider_factory = IProviderFactory(0x000000000000000000000000000000000000C003);
+    //TODO:for test
+    //IProviderFactory public provider_factory;
+    uint256 public challenge_sdl_trx_id;
+    event ChallengeCreate(address,uint256);
+    event ChallengeEnd(address);
+
+    mapping(address=>providerChallengeInfo[]) public provider_challenge_info;
+    mapping(address=>uint256) public  provider_index;
+    mapping(address=>ChallengeState) public provider_last_challenge_state;
+    enum ChallengeState{
+        NotStart,
+        Create,
+        Success,
+        Fail
+    }
+
+    struct providerChallengeInfo{
+        address provider;
+        address challenge_validator;
+        uint256 md5_seed;
+        string url;
+        uint256 create_challenge_time;
+        uint256 challenge_finish_time;
+        ChallengeState state;
+        uint256 challenge_amount;
+        uint256 seed;
+        uint256 root_hash;
+        uint256 index;
+    }
     struct ValidatorInfo{
         address validator;
         address validator_contract;
@@ -160,11 +197,27 @@ contract ValidatorFactory  {
         require(owner_validator[msg.sender] != IValidator(address(0)));
         _;
     }
-    function setProviderFactory(address _provider_factory) public onlyAdmin{
-        providerFactory = _provider_factory;
+    //TODO:for test
+//    function setProviderFactory(address _provider_factory) public onlyAdmin{
+//        provider_factory = IProviderFactory(_provider_factory);
+//    }
+    function changeChallengeSdlTrxID(uint256 _new_trx_id)public onlyAdmin{
+        challenge_sdl_trx_id = _new_trx_id;
+    }
+    function changeMaxChallengeParam(uint256 _max_challenge_percent,uint256 _challenge_all_percent,
+                        uint256 _max_challenge_time,uint256 _max_provider_start_challenge_time) public onlyAdmin{
+        max_challenge_percent = _max_challenge_percent;
+        challenge_all_percent = _challenge_all_percent;
+        max_challenge_time = _max_challenge_time;
+        max_provider_start_challenge_time = _max_provider_start_challenge_time;
     }
     function changeValidatorLockTime(uint256 _new_lock) public onlyAdmin{
         validator_lock_time = _new_lock;
+    }
+    function changePunishPercent(uint256 _new_punish_percent,uint256 _new_punish_all_percent)external onlyAdmin{
+        require(_new_punish_percent < _new_punish_all_percent,"all percent must bigger than punish percent");
+        punish_percent = _new_punish_percent;
+        punish_all_percent = _new_punish_all_percent;
     }
     function changeValidatorPunishStartTime(uint256 _new_start_limit) public onlyAdmin{
         validator_punish_start_limit = _new_start_limit;
@@ -198,6 +251,11 @@ contract ValidatorFactory  {
         return all_validators.length;
     }
     constructor(){
+
+    }
+    function initialize(address[]memory _init_validator,address _admin) external onlyNotInitialize{
+        initialized = true;
+        admin_address= _admin;
         max_validator_count = 61;
         validator_pledgeAmount = 50000 ether;
         team_percent = 400;
@@ -208,10 +266,10 @@ contract ValidatorFactory  {
         validator_punish_interval = 1 hours;
         punish_percent = 100;
         punish_all_percent = 10000;
-    }
-    function initialize(address[]memory _init_validator,address _admin) external onlyNotInitialize{
-        initialized = true;
-        admin_address= _admin;
+        max_challenge_percent = 300;
+        challenge_all_percent = 1000;
+        max_challenge_time = 10 * 60;
+        max_provider_start_challenge_time = 5 *60;
         for(uint256 i = 0;i < _init_validator.length;i++){
             IValidator new_validator = new Validator{salt: keccak256(abi.encodePacked(_init_validator[i]))}();
             new_validator.changeValidatorState(ValidatorState.Ready);
@@ -257,7 +315,7 @@ contract ValidatorFactory  {
     }
     function tryPunish(address val)public
     //TODO for formal
-    //onlyMiner
+    onlyMiner
     {
         if(val != address(0)){
             if(whiteList_validator[val] == IValidator(address(0))){
@@ -320,5 +378,69 @@ contract ValidatorFactory  {
             }
         }
         return ret;
+    }
+
+    function challengeProvider(address provider,uint256 md5_seed,string memory url)public
+    //TODO:for formal
+    onlyMiner
+    {
+        if(current_challenge_provider_count + 1 > provider_factory.getProviderInfoLength() * max_challenge_percent / challenge_all_percent){
+            return;
+        }
+        if(!provider_factory.whetherCanPOR(provider)){
+            return;
+        }
+        uint256 current = provider_index[provider];
+        providerChallengeInfo memory new_info;
+        new_info.provider = provider;
+        new_info.md5_seed = md5_seed;
+        new_info.challenge_validator = msg.sender;
+        new_info.state = ChallengeState.Create;
+        new_info.url = url;
+        new_info.create_challenge_time = block.timestamp;
+        if(current == 0){
+            provider_challenge_info[provider].push(new_info);
+        }else{
+            providerChallengeInfo memory _info = provider_challenge_info[provider][(current-1)%10];
+            if(_info.state != ChallengeState.Create && _info.challenge_validator != msg.sender){
+                if(current < 10){
+                    provider_challenge_info[provider].push(new_info);
+                }
+                else{
+                    provider_challenge_info[provider][current%10] = new_info;
+                }
+
+            }
+        }
+        provider_factory.changeProviderState(provider,true);
+        provider_index[provider] = provider_index[provider] + 1;
+        current_challenge_provider_count = current_challenge_provider_count + 1;
+        provider_last_challenge_state[provider] = ChallengeState.Create;
+        emit ChallengeCreate(provider,md5_seed);
+    }
+    function validatorNotSubmitResult(address provider)public{
+        uint256 current_index = provider_index[provider];
+        providerChallengeInfo storage _info = provider_challenge_info[provider][(current_index-1)%10];
+        require(block.timestamp - _info.create_challenge_time > max_challenge_time && _info.state == ChallengeState.Create,"this challenge has end");
+        _info.challenge_finish_time = block.timestamp;
+        _info.state = ChallengeState.NotStart;
+        current_challenge_provider_count = current_challenge_provider_count - 1;
+        provider_factory.changeProviderState(provider,false);
+        provider_last_challenge_state[provider] = ChallengeState.NotStart;
+        emit ChallengeEnd(provider);
+    }
+    function challengeFinish(address provider,uint256 seed,uint256 challenge_amount,uint256 root_hash,ChallengeState _state)public{
+        uint256 current_index = provider_index[provider];
+        providerChallengeInfo storage _info = provider_challenge_info[provider][(current_index-1)%10];
+        require(_info.challenge_validator == msg.sender && _info.state == ChallengeState.Create,"only challenger can end challenge");
+        _info.challenge_finish_time = block.timestamp;
+        _info.root_hash = root_hash;
+        _info.seed = seed;
+        _info.challenge_amount = challenge_amount;
+        _info.state = _state;
+        current_challenge_provider_count = current_challenge_provider_count - 1;
+        provider_factory.changeProviderState(provider,false);
+        provider_last_challenge_state[provider] = _state;
+        emit ChallengeEnd(provider);
     }
 }
