@@ -121,13 +121,14 @@ describe('Validator test',function(){
     this.provider_factory = await (await ethers.getContractFactory('MockProviderFactory')).deploy();
 
     await this.valFactory.connect(admin).setProviderFactory(this.provider_factory .address);
-    await this.valFactory.challengeProvider(provider.address,10,"www.baidu.com");
+    let whiteListTemp = await ethers.getSigners();
+    await this.valFactory.connect(whiteListTemp[11]).challengeProvider(provider.address,10,"www.baidu.com");
     let index = await this.valFactory.provider_index(provider.address);
     expect(await this.valFactory.provider_index(provider.address)).to.equal(1);
     let challenge_info = await this.valFactory.provider_challenge_info(provider.address,(index-1)%10);
     expect(challenge_info.state).to.equal(1);
     expect(challenge_info.url).to.equal("www.baidu.com");
-    await this.valFactory.challengeFinish(provider.address,20,3,3,2);
+    await this.valFactory.connect(whiteListTemp[11]).challengeFinish(provider.address,20,3,3,2);
     expect(await this.valFactory.provider_index(provider.address)).to.equal(1);
     challenge_info = await this.valFactory.provider_challenge_info(provider.address,(index-1)%10);
     expect(challenge_info.state).to.equal(2);

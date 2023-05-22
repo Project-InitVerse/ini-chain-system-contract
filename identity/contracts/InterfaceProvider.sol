@@ -44,6 +44,7 @@ interface IProviderFactory{
         string region;
         string info;
         uint256 last_challenge_time;
+        uint256 last_margin_time;
     }
 interface IProvider{
     function getLeftResource() external view returns(poaResource memory);
@@ -54,7 +55,7 @@ interface IProvider{
     function info() external view returns(string memory);
     function challengeProvider() external;
     function getDetail() external view returns(providerInfo memory);
-    function triggerMargin() external;
+    function last_margin_time() external view returns(uint256);
     function withdrawMargin() external;
     function removePunish() external;
     function punish()external;

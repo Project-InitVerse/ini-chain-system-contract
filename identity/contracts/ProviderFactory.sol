@@ -17,7 +17,7 @@ contract Provider is IProvider,ReentrancyGuard{
     string public region;
 
     uint256 public provider_first_margin_time;
-    uint256 public last_margin_time;
+    uint256 public override last_margin_time;
     uint256 public last_challenge_time;
 
     uint256 public margin_block;
@@ -25,7 +25,11 @@ contract Provider is IProvider,ReentrancyGuard{
     uint256 public punish_start_margin_amount;
     uint256 public last_punish_time;
     string  public override info;
-
+    event Punish(address indexed,uint256 indexed,uint256 indexed);
+    event MarginAdd(address indexed,uint256 indexed,uint256 indexed);
+    event MarginWithdraw(address indexed,uint256 indexed);
+    event StateChange(address indexed,uint256 indexed);
+    event ChallengeStateChange(address indexed,bool);
     IProviderFactory provider_factory;
     constructor(uint256 cpu_count,
         uint256 mem_count,
@@ -40,8 +44,10 @@ contract Provider is IProvider,ReentrancyGuard{
         owner = _owner;
         info = provider_info;
         challenge = false;
+        emit ChallengeStateChange(owner,challenge);
         region = _region;
         state = ProviderState.Running;
+        emit StateChange(owner,uint256(state));
         provider_first_margin_time = block.timestamp;
         last_margin_time= block.timestamp;
         margin_block = block.number;
@@ -53,18 +59,17 @@ contract Provider is IProvider,ReentrancyGuard{
         left.storage_count = total.storage_count - used.storage_count;
         return left;
     }
-    function triggerMargin() external override onlyFactory{
-        margin_block = block.number;
-        last_margin_time = block.timestamp;
-    }
     function withdrawMargin() external override onlyFactory{
+        uint256 balance_before = address(this).balance;
         sendValue(payable(owner),address(this).balance);
+        emit MarginWithdraw(owner,balance_before);
     }
     function removePunish() external override onlyFactory{
         punish_start_time = 0;
         last_punish_time = 0;
-        if(state == ProviderState.Punish){
+        if(state == ProviderState.Punish || state == ProviderState.Pause){
             state = ProviderState.Running;
+            emit StateChange(owner,uint256(state));
         }
     }
     function punish()external override onlyFactory{
@@ -75,15 +80,18 @@ contract Provider is IProvider,ReentrancyGuard{
                 uint256 _punishAmount = address(this).balance >=PunishAmount  ? PunishAmount : address(this).balance;
                 if (_punishAmount > 0) {
                     sendValue(payable(provider_factory.punish_address()), _punishAmount);
+                    emit Punish(owner,_punishAmount,address(this).balance);
                 }
                 last_punish_time = block.timestamp;
             }
             if(address(this).balance == 0){
                 state = ProviderState.Pause;
+                emit StateChange(owner,uint256(state));
             }
         }else{
             if(state == ProviderState.Running){
                 state = ProviderState.Punish;
+                emit StateChange(owner,uint256(state));
                 punish_start_time = block.timestamp;
                 punish_start_margin_amount = address(this).balance;
             }
@@ -96,8 +104,14 @@ contract Provider is IProvider,ReentrancyGuard{
         (bool success, ) = recipient.call{ value: amount }("");
         require(success, "Address: unable to send value, recipient may have reverted");
     }
-    receive() external payable  {
-
+    receive() external payable onlyFactory {
+        margin_block = block.number;
+        last_margin_time = block.timestamp;
+        if(state == ProviderState.Pause){
+            state = ProviderState.Punish;
+            emit StateChange(owner,uint256(state));
+        }
+        emit MarginAdd(owner,msg.value,address(this).balance);
     }
     event ProviderResourceChange(address);
     modifier onlyFactory(){
@@ -128,6 +142,8 @@ contract Provider is IProvider,ReentrancyGuard{
         ret.owner = owner;
         ret.info = info;
         ret.challenge = challenge;
+        ret.last_challenge_time = last_challenge_time;
+        ret.last_margin_time = last_margin_time;
         return ret;
     }
 
@@ -137,6 +153,7 @@ contract Provider is IProvider,ReentrancyGuard{
     }
     function challengeProvider() external override onlyFactory{
         challenge = true;
+        emit ChallengeStateChange(owner,challenge);
         last_challenge_time = block.timestamp;
         provider_factory.changeProviderResource(total.cpu_count,total.memory_count,total.storage_count,false);
         lock.cpu_count = total.cpu_count - used.cpu_count;
@@ -201,6 +218,7 @@ contract Provider is IProvider,ReentrancyGuard{
             last_challenge_time = block.timestamp;
         }
         challenge = whether_start;
+        emit ChallengeStateChange(owner,challenge);
     }
 }
 contract ProviderFactory is IProviderFactory,ReentrancyGuard {
@@ -220,7 +238,9 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         punish_interval = 1 days;
         decimal_cpu = 1000;
         decimal_memory = 1024 * 1024*1024*4;
+        provider_lock_time = 365 days;
     }
+    uint256 public provider_lock_time;
     uint256 public min_value_tobe_provider;
     uint256 public max_value_tobe_provider;
 
@@ -238,6 +258,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     poaResource public total_all;
     poaResource public total_used;
     mapping(address => IProvider) public providers;
+    address public constant val_factory = address(0x000000000000000000000000000000000000c002);
     //mapping(address => uint256) public provider_pledge;
     IProvider[] provider_array;
     address public order_factory;
@@ -272,8 +293,15 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         require(providers[msg.sender] == IProvider(address(0)),"ProviderFactory: only not provider can use this function");
         _;
     }
+    modifier onlyValidator(){
+        require(msg.sender == val_factory);
+        _;
+    }
     function changePunishAddress(address _punish_address) public onlyAdmin{
         punish_address = _punish_address;
+    }
+    function changeProviderLockTime(uint256 _lock_time) public onlyAdmin{
+        provider_lock_time = _lock_time;
     }
     function changePunishPercent(uint256 _new_punish_percent,uint256 _new_punish_all_percent)external onlyAdmin{
         require(_new_punish_percent < _new_punish_all_percent,"all percent must bigger than punish percent");
@@ -300,9 +328,12 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         //provider_pledge[msg.sender] =provider_pledge[msg.sender] + msg.value;
         (bool sent, ) = (address(providers[msg.sender])).call{ value: msg.value }("");
         require(sent,"ProviderFactory: add Margin fail");
-        providers[msg.sender].triggerMargin();
     }
-
+    function withdrawMargin() public {
+        require(providers[msg.sender] != IProvider(address(0)),"ProviderFactory: only provider owner use this function");
+        require(providers[msg.sender].last_margin_time()+provider_lock_time < block.timestamp,"ProviderFactory: not enough time to use this function");
+        providers[msg.sender].withdrawMargin();
+    }
     function createNewProvider(uint256 cpu_count,
         uint256 mem_count,
         uint256 storage_count,
@@ -417,14 +448,14 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         if(providers[provider_owner] == IProvider(address(0))){
             return false;
         }
-        poaResource memory temp_total = (providers[provider_owner]).getTotalResource();
+        poaResource memory temp_total = (providers[provider_owner]).getLeftResource();
         (uint256 limit_min,) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
         if(limit_min >= min_value_tobe_provider){
             return true;
         }
         return false;
     }
-    function changeProviderState(address provider_owner,bool whether_start) external {
+    function changeProviderState(address provider_owner,bool whether_start) external onlyValidator {
         if(providers[provider_owner] == IProvider(address(0))){
             return ;
         }
@@ -471,16 +502,15 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         return _providerInfos;
     }
 
-    function removePunishList(address provider) onlyMiner external {
+    function removePunishList(address provider) onlyValidator external {
         SortLinkedList.List storage _list = provider_punish_pools;
         _list.removeRanking(providers[provider]);
         providers[provider].removePunish();
     }
     function tryPunish(address new_provider)
-    //TODO formal
-    onlyMiner
-    public{
+    external{
         if(new_provider != address(0)){
+            require(msg.sender == val_factory,"only val factory add new punish provider");
             require(providers[new_provider] != IProvider(address(0)),"ProviderFactory: not validator");
             poaResource memory temp_total = (providers[new_provider]).getTotalResource();
             (uint256 limit_min,) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);

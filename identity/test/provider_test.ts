@@ -11,8 +11,10 @@ describe('provider test',function(){
     [factory_admin,provider_1,provider_2,cus] = await ethers.getSigners();
     this.orderFactory = await (await ethers.getContractFactory('MockOrder')).deploy();
     this.adminFactory = await (await ethers.getContractFactory('AuditorFactory', factory_admin)).deploy(factory_admin.address);
-    this.providerFactory = await (await ethers.getContractFactory('ProviderFactory',factory_admin)).deploy(factory_admin.address,
-      this.orderFactory.address,this.adminFactory.address);
+    this.providerFactory = await (await ethers.getContractFactory('ProviderFactory',factory_admin)).deploy();
+    await this.providerFactory.initialize(factory_admin.address);
+    await this.providerFactory.changeAuditorFactory(this.adminFactory.address);
+    await this.providerFactory.changeOrderFactory(this.orderFactory.address);
   })
   it('init',async function(){
     expect(await this.providerFactory.providers(provider_1.address)).to.equal(zero_addr);

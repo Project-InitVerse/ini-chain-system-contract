@@ -12,6 +12,7 @@ import "hardhat/console.sol";
 contract Validator is Ownable,IValidator{
 
     uint256 public last_punish_time;
+    uint256 public last_margin_time;
     uint256 public override create_time;
     uint256 public punish_start_time;
     //TODO:formal
@@ -20,10 +21,26 @@ contract Validator is Ownable,IValidator{
     //IValFactory public factory_address;
     uint256 public override pledge_amount;
     ValidatorState public override state;
+    event Punish(address indexed,uint256 indexed,uint256 indexed);
+    event MarginAdd(address indexed,uint256 indexed,uint256 indexed);
+    event MarginWithdraw(address indexed,uint256 indexed);
+    event StateChange(address indexed,uint256 indexed);
+    struct ValidatorTotalInfo{
+        address validator;
+        address validator_contract;
+        ValidatorState state;
+        uint256 start_time;
+        uint256 last_margin_time;
+        uint256 last_punish_time;
+        uint256 lock_time;
+        uint256 margin_amount;
+        uint256 punish_start_time;
+    }
     constructor(){
         create_time = block.timestamp;
         pledge_amount = 0;
         state = ValidatorState.Prepare;
+        emit StateChange(owner(),uint256(state));
         //TODO:for test
         //factory_address = IValFactory(msg.sender);
     }
@@ -33,10 +50,14 @@ contract Validator is Ownable,IValidator{
     }
     function changeValidatorState(ValidatorState _state) public override onlyFactory{
         state = _state;
+        emit StateChange(owner(),uint256(state));
     }
     function addMargin() public payable override onlyFactory{
         require(msg.value+ pledge_amount <= (factory_address).validator_pledgeAmount(),"posMargin must less than max validator pledge amount");
+        require(msg.value > 0,"margin amount must above zero");
+        last_margin_time = block.timestamp;
         pledge_amount += msg.value;
+        emit MarginAdd(owner(),msg.value,pledge_amount);
     }
     function sendValue(address payable recipient, uint256 amount) internal {
         require(address(this).balance >= amount, "Address: insufficient balance");
@@ -57,6 +78,7 @@ contract Validator is Ownable,IValidator{
         if(owner() == block.coinbase){
             if(state == ValidatorState.Watch || state == ValidatorState.Punish){
                 state = ValidatorState.Ready;
+                emit StateChange(owner(),uint256(state));
             }
             if(block.timestamp - punish_start_time > factory_address.validator_punish_start_limit() && punish_start_time != 0){
                 if(block.timestamp - last_punish_time > factory_address.validator_punish_interval()){
@@ -65,12 +87,13 @@ contract Validator is Ownable,IValidator{
                     if (_punishAmount > 0) {
                         pledge_amount = pledge_amount-(_punishAmount);
                         sendValue(payable((factory_address).punish_address()), _punishAmount);
-                        //emit Punish(validator, _punishAmount);
+                        emit Punish(owner(), _punishAmount,pledge_amount);
                     }
                 }
             }
             if(pledge_amount == 0){
                 state = ValidatorState.Exit;
+                emit StateChange(owner(),uint256(state));
                 IValFactory(factory_address).exitProduceBlock();
             }
             last_punish_time = 0;
@@ -80,6 +103,7 @@ contract Validator is Ownable,IValidator{
             if(block.timestamp - punish_start_time > factory_address.validator_punish_start_limit() && punish_start_time != 0){
                 if(state != ValidatorState.Exit){
                     state = ValidatorState.Punish;
+                    emit StateChange(owner(),uint256(state));
                 }
                 if(block.timestamp - last_punish_time > factory_address.validator_punish_interval()){
                     uint256 PunishAmount = (factory_address).getPunishAmount();
@@ -87,17 +111,19 @@ contract Validator is Ownable,IValidator{
                     if (_punishAmount > 0) {
                         pledge_amount = pledge_amount-(_punishAmount);
                         sendValue(payable((factory_address).punish_address()), _punishAmount);
-                        //emit Punish(validator, _punishAmount);
+                        emit Punish(owner(), _punishAmount,pledge_amount);
                     }
                     last_punish_time = block.timestamp;
                 }
                 if(pledge_amount == 0){
                     state = ValidatorState.Exit;
+                    emit StateChange(owner(),uint256(state));
                     IValFactory(factory_address).exitProduceBlock();
                 }
             }else{
                 if(state != ValidatorState.Exit){
                     state = ValidatorState.Watch;
+                    emit StateChange(owner(),uint256(state));
                     punish_start_time = block.timestamp;
                 }
             }
@@ -106,9 +132,24 @@ contract Validator is Ownable,IValidator{
 
     }
     function exitVote() public onlyOwner{
-        require((block.timestamp - create_time) > factory_address.validator_lock_time(),"you cant exit util lock time end");
+        require((block.timestamp - last_margin_time) > factory_address.validator_lock_time(),"you cant exit util lock time end");
         pledge_amount = 0;
+        uint256 balance_before = address(this).balance;
         sendValue(payable(owner()),address(this).balance);
+        emit MarginWithdraw(owner(),balance_before);
+    }
+    function getValidatorInfo() public view returns(ValidatorTotalInfo memory){
+    ValidatorTotalInfo memory info;
+        info.validator = owner();
+        info.validator_contract = address(this);
+        info.state = state;
+        info.start_time = create_time;
+        info.last_margin_time = last_margin_time;
+        info.last_punish_time= last_punish_time;
+        info.lock_time = factory_address.validator_lock_time();
+        info.margin_amount = address(this).balance;
+        info.punish_start_time = punish_start_time;
+        return info;
     }
 }
 
@@ -187,6 +228,11 @@ contract ValidatorFactory  {
     }
     modifier onlyAdmin(){
         require(msg.sender == admin_address,"ValidatorFactory:only admin use this function");
+        _;
+    }
+    modifier onlyActiveValidator(){
+        require(owner_validator[msg.sender] != IValidator(address(0)),"ValidatorFactory: only validator use this function");
+        require(owner_validator[msg.sender].isProduceBlock(),"ValidatorFactory:this validator state wrong");
         _;
     }
     modifier onlyNotInitialize(){
@@ -379,10 +425,26 @@ contract ValidatorFactory  {
         }
         return ret;
     }
-
+    function getAllValidator()public view returns(ValidatorInfo[] memory){
+        ValidatorInfo[] memory ret = new ValidatorInfo[](all_validators.length);
+        for(uint256 i = 0;i < all_validators.length;i++){
+            ret[i].validator_contract = address(all_validators[i]);
+            ret[i].validator = Ownable(address(all_validators[i])).owner();
+            ret[i].state = all_validators[i].state();
+            ret[i].start_time = all_validators[i].create_time();
+        }
+        return ret;
+    }
+    function getProviderChallengeInfo(address provider_owner) public view returns(providerChallengeInfo memory){
+        uint256 current_index = provider_index[provider_owner];
+        if(current_index != 0){
+            return provider_challenge_info[provider_owner][(current_index-1)%10];
+        }
+        providerChallengeInfo memory new_info;
+        return new_info;
+    }
     function challengeProvider(address provider,uint256 md5_seed,string memory url)public
-    //TODO:for formal
-    onlyMiner
+    onlyActiveValidator
     {
         if(current_challenge_provider_count + 1 > provider_factory.getProviderInfoLength() * max_challenge_percent / challenge_all_percent){
             return;
@@ -440,6 +502,12 @@ contract ValidatorFactory  {
         _info.state = _state;
         current_challenge_provider_count = current_challenge_provider_count - 1;
         provider_factory.changeProviderState(provider,false);
+        if(_state == ChallengeState.Success){
+            provider_factory.removePunishList(provider);
+        }
+        if(_state == ChallengeState.Fail){
+            provider_factory.tryPunish(provider);
+        }
         provider_last_challenge_state[provider] = _state;
         emit ChallengeEnd(provider);
     }
