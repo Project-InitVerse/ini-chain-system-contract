@@ -45,7 +45,7 @@ contract Validator is Ownable,IValidator{
         //factory_address = IValFactory(msg.sender);
     }
     modifier onlyFactory(){
-        require(msg.sender == address(factory_address));
+        require(msg.sender == address(factory_address),"only factory call this function");
         _;
     }
     function changeValidatorState(ValidatorState _state) public override onlyFactory{
@@ -74,7 +74,7 @@ contract Validator is Ownable,IValidator{
         }
     }
     function punish() external override onlyFactory{
-        require(state != ValidatorState.Prepare);
+        require(state != ValidatorState.Prepare,"only state is not prepare");
         if(owner() == block.coinbase){
             if(state == ValidatorState.Watch || state == ValidatorState.Punish){
                 state = ValidatorState.Ready;
@@ -240,7 +240,7 @@ contract ValidatorFactory  {
         _;
     }
     modifier onlyValidator(){
-        require(owner_validator[msg.sender] != IValidator(address(0)));
+        require(owner_validator[Ownable(msg.sender).owner()] != IValidator(address(0)),"ValidatorFactory: only validator contract use this function");
         _;
     }
     //TODO:for test
@@ -452,6 +452,10 @@ contract ValidatorFactory  {
         if(!provider_factory.whetherCanPOR(provider)){
             return;
         }
+        providerChallengeInfo memory last_provider_info = getProviderChallengeInfo(provider);
+        if(last_provider_info.state == ChallengeState.Create){
+            return;
+        }
         uint256 current = provider_index[provider];
         providerChallengeInfo memory new_info;
         new_info.provider = provider;
@@ -471,7 +475,8 @@ contract ValidatorFactory  {
                 else{
                     provider_challenge_info[provider][current%10] = new_info;
                 }
-
+            }else{
+                return;
             }
         }
         provider_factory.changeProviderState(provider,true);
@@ -479,6 +484,11 @@ contract ValidatorFactory  {
         current_challenge_provider_count = current_challenge_provider_count + 1;
         provider_last_challenge_state[provider] = ChallengeState.Create;
         emit ChallengeCreate(provider,md5_seed);
+    }
+    function changeValidatorChallengeState(address provider,uint256 index)public onlyAdmin{
+        providerChallengeInfo storage _info = provider_challenge_info[provider][index];
+        _info.state = ChallengeState.NotStart;
+        provider_factory.changeProviderState(provider,false);
     }
     function validatorNotSubmitResult(address provider)public{
         uint256 current_index = provider_index[provider];

@@ -53,11 +53,11 @@ interface IProvider{
     function recoverResource(uint256, uint256, uint256) external;
     function owner() external view returns(address);
     function info() external view returns(string memory);
-    function challengeProvider() external;
     function getDetail() external view returns(providerInfo memory);
     function last_margin_time() external view returns(uint256);
     function withdrawMargin() external;
     function removePunish() external;
     function punish()external;
     function startChallenge(bool) external;
+    function challenge() external view returns(bool);
 }

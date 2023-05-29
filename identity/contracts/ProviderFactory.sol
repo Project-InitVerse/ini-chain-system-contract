@@ -11,7 +11,7 @@ contract Provider is IProvider,ReentrancyGuard{
     poaResource public total;
     poaResource public used;
     poaResource public lock;
-    bool public challenge;
+    bool public override challenge;
     ProviderState public state;
     address public override owner;
     string public region;
@@ -52,7 +52,7 @@ contract Provider is IProvider,ReentrancyGuard{
         last_margin_time= block.timestamp;
         margin_block = block.number;
     }
-    function getLeftResource() external override view returns(poaResource memory){
+    function getLeftResource() public view override returns(poaResource memory){
         poaResource memory left;
         left.cpu_count = total.cpu_count - used.cpu_count;
         left.memory_count = total.memory_count-used.memory_count;
@@ -115,15 +115,15 @@ contract Provider is IProvider,ReentrancyGuard{
     }
     event ProviderResourceChange(address);
     modifier onlyFactory(){
-        require(msg.sender == address(provider_factory));
+        require(msg.sender == address(provider_factory),"factory only");
         _;
     }
     modifier onlyOwner{
-        require(msg.sender == owner,"Provider:only owner can use this function");
+        require(msg.sender == owner,"owner only");
         _;
     }
     modifier onlyNotStop{
-        require(state != ProviderState.Stop);
+        require(state != ProviderState.Stop,"only not stop");
         _;
     }
     function changeProviderInfo(string memory new_info) public onlyOwner{
@@ -151,21 +151,10 @@ contract Provider is IProvider,ReentrancyGuard{
     function getTotalResource() external override view returns(poaResource memory){
         return total;
     }
-    function challengeProvider() external override onlyFactory{
-        challenge = true;
-        emit ChallengeStateChange(owner,challenge);
-        last_challenge_time = block.timestamp;
-        provider_factory.changeProviderResource(total.cpu_count,total.memory_count,total.storage_count,false);
-        lock.cpu_count = total.cpu_count - used.cpu_count;
-        lock.memory_count = total.memory_count - used.memory_count;
-        lock.storage_count = total.storage_count - used.storage_count;
-        provider_factory.changeProviderResource(used.cpu_count,used.memory_count,used.storage_count,true);
-    }
 
     function consumeResource(uint256 consume_cpu,uint256 consume_mem,uint256 consume_storage) external override onlyFactory nonReentrant{
-        require(consume_cpu <= total.cpu_count - used.cpu_count,"Provider:cpu is not enough");
-        require(consume_mem <= total.memory_count-used.memory_count,"Provider:mem is not enough");
-        require(consume_storage <= total.storage_count - used.storage_count,"Provider:storage is not enough");
+         poaResource memory _left = getLeftResource();
+        require(consume_cpu <= _left.cpu_count && consume_mem <= _left.memory_count && consume_storage <= _left.storage_count,"resource left not enough");
         provider_factory.changeProviderUsedResource(used.cpu_count,used.memory_count,used.storage_count,false);
         used.cpu_count= used.cpu_count + consume_cpu;
         used.memory_count = used.memory_count + consume_mem;
@@ -191,7 +180,7 @@ contract Provider is IProvider,ReentrancyGuard{
         }
         emit ProviderResourceChange(address(this));
     }
-    function reduceResource(uint256 cpu_count,uint256 memory_count,uint256 storage_count) external onlyOwner {
+    function reduceResource(uint256 cpu_count,uint256 memory_count,uint256 storage_count) external onlyOwner onlyNotStop {
         poaResource memory _left;
         _left.cpu_count = total.cpu_count - used.cpu_count;
         _left.memory_count = total.memory_count-used.memory_count;
@@ -274,7 +263,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     event ProviderCreate(address);
 
     modifier onlyAdmin() {
-        require(msg.sender == admin, "admin  only");
+        require(msg.sender == admin, "admin only");
         _;
     }
     modifier onlyMiner() {
@@ -282,15 +271,15 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         _;
     }
     modifier onlyProvider(){
-        require(providers[IProvider(msg.sender).owner()] != IProvider(address(0)),"ProviderFactory: only provider can use this function");
+        require(providers[IProvider(msg.sender).owner()] != IProvider(address(0)),"provider contract only");
         _;
     }
     modifier onlyNotInitialize(){
-        require(!initialized,"ProviderFactory:this contract has been initialized");
+        require(!initialized,"only not initialize");
         _;
     }
     modifier onlyNotProvider(){
-        require(providers[msg.sender] == IProvider(address(0)),"ProviderFactory: only not provider can use this function");
+        require(providers[msg.sender] == IProvider(address(0)),"only not provider");
         _;
     }
     modifier onlyValidator(){
@@ -304,7 +293,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         provider_lock_time = _lock_time;
     }
     function changePunishPercent(uint256 _new_punish_percent,uint256 _new_punish_all_percent)external onlyAdmin{
-        require(_new_punish_percent < _new_punish_all_percent,"all percent must bigger than punish percent");
+        require(_new_punish_percent < _new_punish_all_percent,"percent error");
         punish_percent = _new_punish_percent;
         punish_all_percent = _new_punish_all_percent;
     }
@@ -321,17 +310,17 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         decimal_memory = new_memory_decimal;
     }
     function addMargin() public  payable{
-        require(providers[msg.sender] != IProvider(address(0)),"ProviderFactory: only provider owner use this function");
+        require(providers[msg.sender] != IProvider(address(0)),"only provider owner");
         poaResource memory temp_total = providers[msg.sender].getTotalResource();
         (uint256 limit_min,uint256 limit_max) = calcProviderAmount(temp_total.cpu_count,temp_total.memory_count);
-        require(address(providers[msg.sender]).balance + msg.value >= limit_min && address(providers[msg.sender]).balance + msg.value <= limit_max,"ProviderFactory: you must pledge money to be a provider");
+        require(address(providers[msg.sender]).balance + msg.value >= limit_min && address(providers[msg.sender]).balance + msg.value <= limit_max,"pledge money range error");
         //provider_pledge[msg.sender] =provider_pledge[msg.sender] + msg.value;
         (bool sent, ) = (address(providers[msg.sender])).call{ value: msg.value }("");
-        require(sent,"ProviderFactory: add Margin fail");
+        require(sent,"add Margin fail");
     }
     function withdrawMargin() public {
-        require(providers[msg.sender] != IProvider(address(0)),"ProviderFactory: only provider owner use this function");
-        require(providers[msg.sender].last_margin_time()+provider_lock_time < block.timestamp,"ProviderFactory: not enough time to use this function");
+        require(providers[msg.sender] != IProvider(address(0)),"only provider owner");
+        require(providers[msg.sender].last_margin_time()+provider_lock_time < block.timestamp,"time not enough");
         providers[msg.sender].withdrawMargin();
     }
     function createNewProvider(uint256 cpu_count,
@@ -343,7 +332,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     public payable returns(address){
         (uint256 limit_min,uint256 limit_max) = calcProviderAmount(cpu_count,mem_count);
         if( limit_min != 0 && limit_max != 0){
-            require(msg.value >= limit_min && msg.value <= limit_max,"ProviderFactory: you must pledge money to be a provider");
+            require(msg.value >= limit_min && msg.value <= limit_max,"must pledge money");
         }
         Provider provider_contract = new Provider(cpu_count,mem_count,storage_count,msg.sender,region,provider_info);
         total_all.cpu_count = total_all.cpu_count + cpu_count;
@@ -354,7 +343,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         providers[msg.sender] = provider_contract;
         if(msg.value>0){
             (bool sent, ) = (address(provider_contract)).call{value: msg.value}("");
-            require(sent,"ProviderFactory: add Margin fail");
+            require(sent,"add Margin fail");
         }
 
         emit ProviderCreate(address(provider_contract));
@@ -399,12 +388,12 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
     function getProvideResource(address account) external override view returns(poaResource memory){
         require(account != address(0));
-        require(address(providers[IProvider(account).owner()]) == account,"ProviderFactory : this provider doesnt exist");
+        require(address(providers[IProvider(account).owner()]) == account,"provider not exist");
         return IProvider(account).getLeftResource();
     }
     function getProvideTotalResource(address account) external override view returns(poaResource memory){
         require(account != address(0));
-        require(address(providers[IProvider(account).owner()]) == account,"ProviderFactory : this provider doesnt exist");
+        require(address(providers[IProvider(account).owner()]) == account,"provider not exist");
         return IProvider(account).getTotalResource();
     }
     function changeProviderResource(uint256 cpu_count, uint256 mem_count, uint256 storage_count, bool add) external onlyProvider override{
@@ -430,13 +419,13 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         }
     }
     function consumeResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external override nonReentrant{
-        require(IOrderFactory(order_factory).checkIsOrder(msg.sender) >0,"ProviderFactory : not order user");
+        require(IOrderFactory(order_factory).checkIsOrder(msg.sender) >0,"not order user");
         require(account != address(0));
         require(address(providers[IProvider(account).owner()]) == account);
         IProvider(account).consumeResource(cpu_count,mem_count,storage_count);
     }
     function recoverResource(address account,uint256 cpu_count, uint256 mem_count, uint256 storage_count)external override nonReentrant{
-        require(IOrderFactory(order_factory).checkIsOrder(msg.sender)>0,"ProviderFactory : not order user");
+        require(IOrderFactory(order_factory).checkIsOrder(msg.sender)>0,"not order user");
         require(account != address(0));
         require(address(providers[IProvider(account).owner()]) == account);
         IProvider(account).recoverResource(cpu_count,mem_count,storage_count);
@@ -446,6 +435,9 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     }
     function whetherCanPOR(address provider_owner) external view returns(bool){
         if(providers[provider_owner] == IProvider(address(0))){
+            return false;
+        }
+        if(providers[provider_owner].challenge()){
             return false;
         }
         poaResource memory temp_total = (providers[provider_owner]).getLeftResource();
@@ -465,7 +457,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         return (total_all,total_used);
     }
     function getProviderSingle(address _provider_contract) public view returns(providerInfos memory){
-        require(address(providers[IProvider(_provider_contract).owner()]) == _provider_contract,"ProviderFactory: provider_contract error");
+        require(address(providers[IProvider(_provider_contract).owner()]) == _provider_contract,"provider_contract error");
         providerInfos memory _providerInfos;
         _providerInfos.info = IProvider(_provider_contract).getDetail();
         _providerInfos.provider_contract = _provider_contract;
@@ -482,10 +474,10 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         }
         uint256 _limit= limit;
         if(limit == 0){
-            require(start == 0,"ProviderFactory:get all must start with zero");
+            require(start == 0,"must start with zero");
             _limit = provider_array.length;
         }
-        require(start < provider_array.length,"ProviderFactory:start must below provider_array length");
+        require(start < provider_array.length,"start>provider_array.length");
         uint256 _count = provider_array.length - start;
         if (provider_array.length - start > _limit){
             _count = _limit;
