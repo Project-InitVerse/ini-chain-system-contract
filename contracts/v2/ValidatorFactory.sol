@@ -121,7 +121,7 @@ contract Validator is Ownable,IValidator{
                     IValFactory(factory_address).exitProduceBlock();
                 }
             }else{
-                if(state != ValidatorState.Exit){
+                if(state == ValidatorState.Ready){
                     state = ValidatorState.Watch;
                     emit StateChange(owner(),uint256(state));
                     punish_start_time = block.timestamp;
@@ -187,8 +187,8 @@ contract ValidatorFactory  {
     //TODO:for test
     //IProviderFactory public provider_factory;
     uint256 public challenge_sdl_trx_id;
-    event ChallengeCreate(address,uint256);
-    event ChallengeEnd(address);
+    event ChallengeCreate(address,uint256,uint256);
+    event ChallengeEnd(address,uint256);
 
     mapping(address=>providerChallengeInfo[]) public provider_challenge_info;
     mapping(address=>uint256) public  provider_index;
@@ -314,8 +314,8 @@ contract ValidatorFactory  {
         punish_all_percent = 10000;
         max_challenge_percent = 300;
         challenge_all_percent = 1000;
-        max_challenge_time = 10 * 60;
-        max_provider_start_challenge_time = 5 *60;
+        max_challenge_time = 12 * 60;
+        max_provider_start_challenge_time = 8 *60;
         for(uint256 i = 0;i < _init_validator.length;i++){
             IValidator new_validator = new Validator{salt: keccak256(abi.encodePacked(_init_validator[i]))}();
             new_validator.changeValidatorState(ValidatorState.Ready);
@@ -464,6 +464,7 @@ contract ValidatorFactory  {
         new_info.state = ChallengeState.Create;
         new_info.url = url;
         new_info.create_challenge_time = block.timestamp;
+        new_info.index = current;
         if(current == 0){
             provider_challenge_info[provider].push(new_info);
         }else{
@@ -483,7 +484,7 @@ contract ValidatorFactory  {
         provider_index[provider] = provider_index[provider] + 1;
         current_challenge_provider_count = current_challenge_provider_count + 1;
         provider_last_challenge_state[provider] = ChallengeState.Create;
-        emit ChallengeCreate(provider,md5_seed);
+        emit ChallengeCreate(provider,md5_seed,current);
     }
     function changeValidatorChallengeState(address provider,uint256 index)public onlyAdmin{
         providerChallengeInfo storage _info = provider_challenge_info[provider][index];
@@ -499,7 +500,7 @@ contract ValidatorFactory  {
         current_challenge_provider_count = current_challenge_provider_count - 1;
         provider_factory.changeProviderState(provider,false);
         provider_last_challenge_state[provider] = ChallengeState.NotStart;
-        emit ChallengeEnd(provider);
+        emit ChallengeEnd(provider,current_index - 1);
     }
     function challengeFinish(address provider,uint256 seed,uint256 challenge_amount,uint256 root_hash,ChallengeState _state)public{
         uint256 current_index = provider_index[provider];
@@ -519,6 +520,6 @@ contract ValidatorFactory  {
             provider_factory.tryPunish(provider);
         }
         provider_last_challenge_state[provider] = _state;
-        emit ChallengeEnd(provider);
+        emit ChallengeEnd(provider,current_index-1);
     }
 }
