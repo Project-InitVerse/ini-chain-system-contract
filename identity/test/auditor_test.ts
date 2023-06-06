@@ -12,8 +12,11 @@ describe('auditor test',function(){
     [factory_admin,auditor1,auditor2,provider1,provider2] = await ethers.getSigners()
     this.orderFactory = await (await ethers.getContractFactory('MockOrder')).deploy();
     this.AuditorFactory = await (await ethers.getContractFactory('AuditorFactory', factory_admin)).deploy(factory_admin.address);
-    this.providerFactory = await (await ethers.getContractFactory('ProviderFactory',factory_admin)).deploy(factory_admin.address,
-      this.orderFactory.address,this.AuditorFactory.address);
+    this.providerFactory = await (await ethers.getContractFactory('ProviderFactory',factory_admin)).deploy();
+    await this.providerFactory.initialize(factory_admin.address);
+    await this.providerFactory.changeAuditorFactory(this.AuditorFactory.address);
+    await this.providerFactory.changeOrderFactory(this.orderFactory.address);
+
     await this.providerFactory.connect(provider1).createNewProvider(3,6,9,"{}",{value:ethers.utils.parseEther("1")});
     await this.providerFactory.connect(provider2).createNewProvider(9,6,3,"{}",{value:ethers.utils.parseEther("1")});
     provider_contract_1 = await this.providerFactory.providers(provider1.address);
@@ -26,15 +29,15 @@ describe('auditor test',function(){
     expect(await this.AuditorFactory.auditors(auditor2.address)).to.equal(zero_address)
   });
   it("create auditor", async function() {
-    await expect(this.AuditorFactory.connect(auditor1).createAuditor()).to.be.revertedWith('AuditorFactory:you must pledge money to be a auditor');
-    await this.AuditorFactory.connect(auditor1).createAuditor({value:ethers.utils.parseEther("1")});
-    await expect(this.AuditorFactory.connect(auditor1).createAuditor()).to.be.revertedWith('AuditorFactory:only not auditor can use this function');
+    await expect(this.AuditorFactory.connect(auditor1).createAuditor("cc")).to.be.revertedWith('AuditorFactory:you must pledge money to be a auditor');
+    await this.AuditorFactory.connect(auditor1).createAuditor("cc",{value:ethers.utils.parseEther("1")});
+    await expect(this.AuditorFactory.connect(auditor1).createAuditor("cc")).to.be.revertedWith('AuditorFactory:only not auditor can use this function');
     expect(await this.AuditorFactory.auditors(auditor1.address)).to.not.equal(zero_address);
     expect(await this.AuditorFactory.auditors(auditor2.address)).to.equal(zero_address);
   });
   it("auditor provider init state",async function(){
-    await this.AuditorFactory.connect(auditor1).createAuditor({value:ethers.utils.parseEther("1")});
-    await this.AuditorFactory.connect(auditor2).createAuditor({value:ethers.utils.parseEther("1")});
+    await this.AuditorFactory.connect(auditor1).createAuditor("cc",{value:ethers.utils.parseEther("1")});
+    await this.AuditorFactory.connect(auditor2).createAuditor("dd",{value:ethers.utils.parseEther("1")});
     let auditor_contract1 = await this.AuditorFactory.auditors(auditor1.address);
     let auditor_contract2 = await this.AuditorFactory.auditors(auditor2.address);
     let auditor_c1 = <Auditor>await ethers.getContractAt('Auditor',auditor_contract1);
@@ -51,7 +54,7 @@ describe('auditor test',function(){
     expect(c.length).to.equal(0);
   })
   it("auditor set provider state", async function() {
-    await this.AuditorFactory.connect(auditor1).createAuditor({value:ethers.utils.parseEther("1")});
+    await this.AuditorFactory.connect(auditor1).createAuditor("cc",{value:ethers.utils.parseEther("1")});
     let auditor_contract1 = await this.AuditorFactory.auditors(auditor1.address);
     let auditor_c1 = <Auditor>await ethers.getContractAt('Auditor',auditor_contract1);
     await expect(auditor_c1.uploadProviderState(provider_contract_1,"{}")).to.be.revertedWith('Auditor:only admin can use this function');
@@ -67,16 +70,16 @@ describe('auditor test',function(){
     expect(await this.AuditorFactory.getProviderJson(auditor_contract1,provider_contract_1)).to.equal("{\"key\":cc}")
   });
   it("provider info from auditor", async function() {
-    await this.AuditorFactory.connect(auditor1).createAuditor({value:ethers.utils.parseEther("1")});
-    await this.AuditorFactory.connect(auditor2).createAuditor({value:ethers.utils.parseEther("1")});
+    await this.AuditorFactory.connect(auditor1).createAuditor("cc",{value:ethers.utils.parseEther("1")});
+    await this.AuditorFactory.connect(auditor2).createAuditor("dd",{value:ethers.utils.parseEther("1")});
     let auditor_contract1 = await this.AuditorFactory.auditors(auditor1.address);
     let auditor_contract2 = await this.AuditorFactory.auditors(auditor2.address);
     let auditor_c1 = <Auditor>await ethers.getContractAt('Auditor',auditor_contract1);
     let auditor_c2 = <Auditor>await ethers.getContractAt('Auditor',auditor_contract2);
     await auditor_c1.connect(auditor1).uploadProviderState(provider_contract_1,"{\"key\":cc}");
     await auditor_c2.connect(auditor2).uploadProviderState(provider_contract_1,"{\"key\":cc}");
-    await expect(this.providerFactory.getProviderInfo(1,0)).to.be.revertedWith("ProviderFactory:get all must start with zero");
-    await expect(this.providerFactory.getProviderInfo(3,1)).to.be.revertedWith("ProviderFactory:start must below providerArray length");
+    await expect(this.providerFactory.getProviderInfo(1,0)).to.be.revertedWith("must start with zero");
+    await expect(this.providerFactory.getProviderInfo(3,1)).to.be.revertedWith("start>provider_array.length");
     let c =await this.providerFactory.getProviderInfo(1,1);
     expect(c.length).to.equal(1)
     c = await this.providerFactory.getProviderInfo(0,0);

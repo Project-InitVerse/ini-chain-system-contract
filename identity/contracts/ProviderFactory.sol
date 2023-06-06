@@ -5,7 +5,6 @@ import "./InterfaceProvider.sol";
 import "./InterfaceAuditor.sol";
 import "./InterfaceOrderFactory.sol";
 import "./SortList.sol";
-import "hardhat/console.sol";
 
 contract Provider is IProvider,ReentrancyGuard{
     poaResource public total;
@@ -502,6 +501,7 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
     function tryPunish(address new_provider)
     external{
         if(new_provider != address(0)){
+            //TODO for test
             require(msg.sender == val_factory,"only val factory add new punish provider");
             require(providers[new_provider] != IProvider(address(0)),"ProviderFactory: not validator");
             poaResource memory temp_total = (providers[new_provider]).getTotalResource();
@@ -513,7 +513,6 @@ contract ProviderFactory is IProviderFactory,ReentrancyGuard {
         }
 
         SortLinkedList.List storage _providerPunishPool = provider_punish_pools;
-        console.log(_providerPunishPool.length);
         IProvider _cur = _providerPunishPool.head;
         while (_cur != IProvider(address(0))) {
             _cur.punish();

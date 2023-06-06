@@ -6,8 +6,6 @@ import "./interface/IValidator.sol";
 import "./interface/IValFactory.sol";
 import "./library/SortList.sol";
 import "./interface/IProviderFactory.sol";
-import "hardhat/console.sol";
-
 
 contract Validator is Ownable,IValidator{
 
@@ -514,9 +512,11 @@ contract ValidatorFactory  {
         current_challenge_provider_count = current_challenge_provider_count - 1;
         provider_factory.changeProviderState(provider,false);
         if(_state == ChallengeState.Success){
+            //TODO for test
             provider_factory.removePunishList(provider);
         }
         if(_state == ChallengeState.Fail){
+            //TODO for test
             provider_factory.tryPunish(provider);
         }
         provider_last_challenge_state[provider] = _state;

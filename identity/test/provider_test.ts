@@ -33,7 +33,7 @@ describe('provider test',function(){
   it("create provider", async function() {
     //await expect(this.providerFactory.connect(provider_1).createNewProvider(3,6,9,"cn","{}")).to.be.revertedWith('ProviderFactory: you must pledge money to be a provider');
     await this.providerFactory.connect(provider_1).createNewProvider(3,6,9,"cn","{}",{value:ethers.utils.parseEther("1")});
-    await expect(this.providerFactory.connect(provider_1).createNewProvider(3,6,9,"cn","{}")).to.be.revertedWith('ProviderFactory: only not provider can use this function');
+    await expect(this.providerFactory.connect(provider_1).createNewProvider(3,6,9,"cn","{}")).to.be.revertedWith('only not provider');
     let provider_contract1 = await this.providerFactory.providers(provider_1.address);
     let total_all = await this.providerFactory.total_all();
     let total_used = await this.providerFactory.total_used();
@@ -62,7 +62,7 @@ describe('provider test',function(){
     await this.providerFactory.connect(provider_2).createNewProvider(9,6,3,"cn","{}",{value:ethers.utils.parseEther("1")});
     let provider_contract_1 = await this.providerFactory.providers(provider_1.address);
     let provider_contract_2 = await this.providerFactory.providers(provider_2.address);
-    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,2,1,1)).to.be.revertedWith('ProviderFactory : not order user');
+    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,2,1,1)).to.be.revertedWith('not order user');
     await this.orderFactory.connect(cus).set()
     expect(await this.orderFactory.cc(cus.address)).to.equal(1)
     await this.providerFactory.connect(cus).consumeResource(provider_contract_1,2,1,1);
@@ -82,9 +82,9 @@ describe('provider test',function(){
     expect(x).to.equal(BigNumber.from(3));
     expect(y).to.equal(BigNumber.from(6));
     expect(z).to.equal(BigNumber.from(9));
-    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,5,1,1)).to.be.revertedWith('Provider:cpu is not enough');
-    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,1,6,1)).to.be.revertedWith('Provider:mem is not enough');
-    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,1,1,10)).to.be.revertedWith('Provider:storage is not enough');
+    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,5,1,1)).to.be.revertedWith('resource left not enough');
+    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,1,6,1)).to.be.revertedWith('resource left not enough');
+    await expect(this.providerFactory.connect(cus).consumeResource(provider_contract_1,1,1,10)).to.be.revertedWith('resource left not enough');
   });
   it("recover Resource", async function() {
     await this.providerFactory.connect(provider_1).createNewProvider(3,6,9,"cn","{}",{value:ethers.utils.parseEther("1")});
@@ -93,7 +93,7 @@ describe('provider test',function(){
     let provider_contract_2 = await this.providerFactory.providers(provider_2.address);
     await this.orderFactory.connect(cus).set()
     await this.providerFactory.connect(cus).consumeResource(provider_contract_1,2,1,1);
-    await expect(this.providerFactory.connect(factory_admin).recoverResource(provider_contract_1,2,1,1)).to.be.revertedWith('ProviderFactory : not order user');
+    await expect(this.providerFactory.connect(factory_admin).recoverResource(provider_contract_1,2,1,1)).to.be.revertedWith('not order user');
     await this.providerFactory.connect(cus).recoverResource(provider_contract_1,2,1,1);
     let total_all = await this.providerFactory.total_all();
     let total_used = await this.providerFactory.total_used();
@@ -146,7 +146,7 @@ describe('provider test',function(){
     await this.orderFactory.connect(cus).set()
     await this.providerFactory.connect(cus).consumeResource(provider_contract_1,2,1,1);
     let provider_c = <Provider>await ethers.getContractAt("Provider",provider_contract_1);
-    await expect(provider_c.connect(factory_admin).updateResource(0,1,1)).to.be.revertedWith('Provider:only owner can use this function');
+    await expect(provider_c.connect(factory_admin).updateResource(0,1,1)).to.be.revertedWith('owner only');
     await provider_c.connect(provider_1).updateResource(0,1,1);
     let total_all = await this.providerFactory.total_all();
     let total_used = await this.providerFactory.total_used();
