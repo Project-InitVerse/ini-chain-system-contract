@@ -113,7 +113,8 @@ contract AddressList {
         if (t) {
             return (true, Direction.To);
         }
-        return (false, Direction.From); // the Direction means nothing here.
+        return (false, Direction.From);
+        // the Direction means nothing here.
     }
 
     function addBlacklist(address a, Direction d) external onlyAdmin {

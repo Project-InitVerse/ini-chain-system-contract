@@ -21,18 +21,18 @@ contract MockList {
         list.removeRanking(_value);
     }
 
-    function prev(IDposPledge _value) view external returns(IDposPledge){
+    function prev(IDposPledge _value) view external returns (IDposPledge){
         return list.prev[_value];
     }
 
-    function next(IDposPledge _value) view external returns(IDposPledge){
+    function next(IDposPledge _value) view external returns (IDposPledge){
         return list.next[_value];
     }
 
     function clear() external {
         IDposPledge _tail = list.tail;
 
-        while(_tail != IDposPledge(address(0))) {
+        while (_tail != IDposPledge(address(0))) {
             IDposPledge _prev = list.prev[_tail];
             list.removeRanking(_tail);
             _tail = _prev;

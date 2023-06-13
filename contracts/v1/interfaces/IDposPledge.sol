@@ -13,19 +13,21 @@ interface IDposPledge {
     function punish() external;
 
     function removeValidatorIncoming() external;
-    function getPendingReward(address _voter) external view returns (uint256);
-    function getVoterInfo(address _user)external view  returns (VoterInfo memory);
-}
-struct VoterInfo {
-    uint256 amount;
-    uint256 rewardDebt;
-    uint256 withdrawPendingAmount;
-    uint256 withdrawExitBlock;
-}
 
-enum State {
-    Idle,
-    Ready,
-    Pause,
-    Jail
+    function getPendingReward(address _voter) external view returns (uint256);
+
+    function getVoterInfo(address _user) external view returns (VoterInfo memory);
 }
+    struct VoterInfo {
+        uint256 amount;
+        uint256 rewardDebt;
+        uint256 withdrawPendingAmount;
+        uint256 withdrawExitBlock;
+    }
+
+    enum State {
+        Idle,
+        Ready,
+        Pause,
+        Jail
+    }

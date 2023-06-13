@@ -17,7 +17,7 @@ interface IDposFactory {
     function dposPledges(address validator) external view returns (IDposPledge);
 }
 
-enum Operation {
-    Distribute,
-    UpdateValidators
-}
+    enum Operation {
+        Distribute,
+        UpdateValidators
+    }

@@ -66,11 +66,11 @@ contract Punish is Params, IPunish {
     }
 
     function decreaseMissedBlocksCounter(uint256 _epoch)
-        external
-        onlyMiner
-        onlyNotDecreased
-        onlyInitialized
-        onlyBlockEpoch(_epoch)
+    external
+    onlyMiner
+    onlyNotDecreased
+    onlyInitialized
+    onlyBlockEpoch(_epoch)
     {
         decreased[block.number] = true;
         if (punishValidators.length == 0) {
@@ -80,9 +80,9 @@ contract Punish is Params, IPunish {
         for (uint256 i = 0; i < punishValidators.length; i++) {
             if (punishRecords[punishValidators[i]].missedBlocksCounter > removeThreshold / decreaseRate) {
                 punishRecords[punishValidators[i]].missedBlocksCounter =
-                    punishRecords[punishValidators[i]].missedBlocksCounter -
-                    removeThreshold /
-                    decreaseRate;
+                punishRecords[punishValidators[i]].missedBlocksCounter -
+                removeThreshold /
+                decreaseRate;
             } else {
                 punishRecords[punishValidators[i]].missedBlocksCounter = 0;
             }

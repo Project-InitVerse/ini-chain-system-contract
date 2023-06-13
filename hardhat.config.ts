@@ -6,8 +6,6 @@ import "@nomiclabs/hardhat-truffle5";
 import "@nomiclabs/hardhat-solpp";
 import "hardhat-contract-sizer";
 
-import "./tasks/accounts";
-import "./tasks/deploy";
 
 import { resolve } from "path";
 

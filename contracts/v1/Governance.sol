@@ -73,16 +73,16 @@ contract Governance is Params {
     }
 
     function getProposalById(uint256 id)
-        external
-        view
-        returns (
-            uint256 _id,
-            uint256 action,
-            address from,
-            address to,
-            uint256 value,
-            bytes memory data
-        )
+    external
+    view
+    returns (
+        uint256 _id,
+        uint256 action,
+        address from,
+        address to,
+        uint256 value,
+        bytes memory data
+    )
     {
         require(id < proposals.length, "Id does not exist");
 
@@ -95,16 +95,16 @@ contract Governance is Params {
     }
 
     function getPassedProposalByIndex(uint32 index)
-        external
-        view
-        returns (
-            uint256 id,
-            uint256 action,
-            address from,
-            address to,
-            uint256 value,
-            bytes memory data
-        )
+    external
+    view
+    returns (
+        uint256 id,
+        uint256 action,
+        address from,
+        address to,
+        uint256 value,
+        bytes memory data
+    )
     {
         require(index < passedProposals.length, "Index out of range");
 
