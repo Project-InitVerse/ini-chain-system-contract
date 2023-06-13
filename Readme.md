@@ -41,6 +41,10 @@ for test you should do follow change in the contracts;
 ```
 yarn hardhat test ./test/v2/validator.ts
 ```
+## Init
+```
+yarn install
+```
 ## Compile
 ```
 yarn hardhat compile
