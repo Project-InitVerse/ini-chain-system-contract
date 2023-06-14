@@ -8,21 +8,29 @@ import "./library/SortList.sol";
 import "./interface/IProviderFactory.sol";
 
 contract Validator is Ownable, IValidator {
-
+    //last punish time of validator
     uint256 public last_punish_time;
+    //last margin time of validator
     uint256 public last_margin_time;
+    //validator create time;
     uint256 public override create_time;
+    //this round punish time of validator
     uint256 public punish_start_time;
     //TODO:formal
     IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
     //TODO:for test
     //IValFactory public factory_address;
+    // pledge amount
     uint256 public override pledge_amount;
+    // validator state
     ValidatorState public override state;
-
+    // punish event
     event Punish(address indexed, uint256 indexed, uint256 indexed);
+    // margin add event
     event MarginAdd(address indexed, uint256 indexed, uint256 indexed);
+    // margin withdraw event
     event MarginWithdraw(address indexed, uint256 indexed);
+    // state change event
     event StateChange(address indexed, uint256 indexed);
 
     struct ValidatorTotalInfo {
@@ -36,6 +44,7 @@ contract Validator is Ownable, IValidator {
         uint256 margin_amount;
         uint256 punish_start_time;
     }
+    // @dev Initialization parameters
     constructor(){
         create_time = block.timestamp;
         pledge_amount = 0;
@@ -44,15 +53,17 @@ contract Validator is Ownable, IValidator {
         //TODO:for test
         //factory_address = IValFactory(msg.sender);
     }
+    // @dev only factory
     modifier onlyFactory(){
         require(msg.sender == address(factory_address), "only factory call this function");
         _;
     }
+    // @dev change validator state
     function changeValidatorState(ValidatorState _state) public override onlyFactory {
         state = _state;
         emit StateChange(owner(), uint256(state));
     }
-
+    // @dev add margin
     function addMargin() public payable override onlyFactory {
         require(msg.value + pledge_amount <= (factory_address).validator_pledgeAmount(), "posMargin must less than max validator pledge amount");
         require(msg.value > 0, "margin amount must above zero");
@@ -60,7 +71,7 @@ contract Validator is Ownable, IValidator {
         pledge_amount += msg.value;
         emit MarginAdd(owner(), msg.value, pledge_amount);
     }
-
+    // @dev internal function for transfer value
     function sendValue(address payable recipient, uint256 amount) internal {
         require(address(this).balance >= amount, "Address: insufficient balance");
 
@@ -68,7 +79,7 @@ contract Validator is Ownable, IValidator {
         (bool success,) = recipient.call{value : amount}("");
         require(success, "Address: unable to send value, recipient may have reverted");
     }
-
+    // @dev get validator whether can produce block
     function isProduceBlock() override external view returns (bool){
         if (state == ValidatorState.Watch || state == ValidatorState.Ready || state == ValidatorState.Punish) {
             return true;
@@ -76,7 +87,7 @@ contract Validator is Ownable, IValidator {
             return false;
         }
     }
-
+    // @dev punish validator function
     function punish() external override onlyFactory {
         require(state != ValidatorState.Prepare, "only state is not prepare");
         if (owner() == block.coinbase) {
@@ -135,7 +146,7 @@ contract Validator is Ownable, IValidator {
         }
 
     }
-
+    // @dev margin withdraw function
     function exitVote() public onlyOwner {
         require((block.timestamp - last_margin_time) > factory_address.validator_lock_time(), "you cant exit util lock time end");
         pledge_amount = 0;
@@ -143,7 +154,7 @@ contract Validator is Ownable, IValidator {
         sendValue(payable(owner()), address(this).balance);
         emit MarginWithdraw(owner(), balance_before);
     }
-
+    // @dev get validator info
     function getValidatorInfo() public view returns (ValidatorTotalInfo memory){
         ValidatorTotalInfo memory info;
         info.validator = owner();
@@ -162,43 +173,62 @@ contract Validator is Ownable, IValidator {
 
 contract ValidatorFactory {
     using SortLinkedList for SortLinkedList.List;
+    // max validator count
     uint256 public max_validator_count;
+    // validator pledge amount default is 50000 ether
     uint256 public validator_pledgeAmount;
+    // current validator count
     uint256 public current_validator_count;
+    // reward percent of team default is 400 all is 10000,4%
     uint256 public team_percent;
+    // reward percent of validator default is 1000 all is 10000,10%
     uint256 public validator_percent;
+    // reward all percent all is 10000
     uint256 public all_percent;
+    // team address get reward
     address public team_address;
-
+    // address get punish amount
     address public punish_address;
+    // percent of validator punish
     uint256 public punish_percent;
+    // punish all percent
     uint256 public punish_all_percent;
-
+    // factory admin address
     address public admin_address;
-
+    // validator margin lock time
     uint256 public validator_lock_time;
+    // time limit to start punish default is 48 hours
     uint256 public validator_punish_start_limit;
+    // punish interval time default is 1 hour
     uint256 public validator_punish_interval;
-
+    // validator factory whether initialized
     bool public initialized;
+    // white list of validator
     mapping(address => IValidator) public whiteList_validator;
-
+    // current provider in challenge state
     uint256 public current_challenge_provider_count;
+    // challenge provider count percent
     uint256 public max_challenge_percent;
+    // challenge all percent
     uint256 public challenge_all_percent;
+    // max challenge time default is 12 minutes
     uint256 public max_challenge_time;
+    // max time for provider start challenge time default is 8 minutes
     uint256 public max_provider_start_challenge_time;
     //TODO:formal
     IProviderFactory public constant provider_factory = IProviderFactory(0x000000000000000000000000000000000000C003);
     //TODO:for test
     //IProviderFactory public provider_factory;
     uint256 public challenge_sdl_trx_id;
-
+    // challenge create event
     event ChallengeCreate(address, uint256, uint256);
+    // challenge end event
     event ChallengeEnd(address, uint256);
-
+    // provider challenge info
     mapping(address => providerChallengeInfo[]) public provider_challenge_info;
+    // provider next challenge index
     mapping(address => uint256) public  provider_index;
+    // provider last challenge state
     mapping(address => ChallengeState) public provider_last_challenge_state;
     enum ChallengeState{
         NotStart,
@@ -227,27 +257,34 @@ contract ValidatorFactory {
         ValidatorState state;
         uint256 start_time;
     }
-
+    // use validator owner get validator
     mapping(address => IValidator)public owner_validator;
+    // all validator
     IValidator[] public all_validators;
+    // validator punish list
     SortLinkedList.List validatorPunishPools;
+    // @dev only miner
     modifier onlyMiner() {
         require(msg.sender == block.coinbase, "Miner only");
         _;
     }
+    // @dev only admin
     modifier onlyAdmin(){
         require(msg.sender == admin_address, "ValidatorFactory:only admin use this function");
         _;
     }
+    // @dev only active validator
     modifier onlyActiveValidator(){
         require(owner_validator[msg.sender] != IValidator(address(0)), "ValidatorFactory: only validator use this function");
         require(owner_validator[msg.sender].isProduceBlock(), "ValidatorFactory:this validator state wrong");
         _;
     }
+    // @dev only not call initialize function
     modifier onlyNotInitialize(){
         require(!initialized, "ValidatorFactory:this contract has been initialized");
         _;
     }
+    // @dev only validator
     modifier onlyValidator(){
         require(owner_validator[Ownable(msg.sender).owner()] != IValidator(address(0)), "ValidatorFactory: only validator contract use this function");
         _;
@@ -256,10 +293,11 @@ contract ValidatorFactory {
     //    function setProviderFactory(address _provider_factory) public onlyAdmin{
     //        provider_factory = IProviderFactory(_provider_factory);
     //    }
+    // @dev change challenge sdl trx_id
     function changeChallengeSdlTrxID(uint256 _new_trx_id) public onlyAdmin {
         challenge_sdl_trx_id = _new_trx_id;
     }
-
+    // @dev change challenge param
     function changeMaxChallengeParam(uint256 _max_challenge_percent, uint256 _challenge_all_percent,
         uint256 _max_challenge_time, uint256 _max_provider_start_challenge_time) public onlyAdmin {
         max_challenge_percent = _max_challenge_percent;
@@ -267,59 +305,60 @@ contract ValidatorFactory {
         max_challenge_time = _max_challenge_time;
         max_provider_start_challenge_time = _max_provider_start_challenge_time;
     }
-
+    // @dev change validator margin amount lock time
     function changeValidatorLockTime(uint256 _new_lock) public onlyAdmin {
         validator_lock_time = _new_lock;
     }
-
+    // @dev change punish percent
     function changePunishPercent(uint256 _new_punish_percent, uint256 _new_punish_all_percent) external onlyAdmin {
         require(_new_punish_percent < _new_punish_all_percent, "all percent must bigger than punish percent");
         punish_percent = _new_punish_percent;
         punish_all_percent = _new_punish_all_percent;
     }
-
+    // @dev change validator punish start time
     function changeValidatorPunishStartTime(uint256 _new_start_limit) public onlyAdmin {
         validator_punish_start_limit = _new_start_limit;
     }
-
+    // @dev change validator punish interval
     function changeValidatorPunishInterval(uint256 _new_interval) public onlyAdmin {
         validator_punish_interval = _new_interval;
     }
-
+    // @dev change admin address
     function changeAdminAddress(address _new_admin) public onlyAdmin {
         require(_new_admin != address(0));
         admin_address = _new_admin;
     }
-
+    // @dev change punish address
     function changePunishAddress(address _punish_address) public onlyAdmin {
         punish_address = _punish_address;
     }
-
+    // @dev change team address
     function changeTeamAddress(address _team_address) public onlyAdmin {
         team_address = _team_address;
     }
-
+    // @dev change reward percent
     function changeRewardPercent(uint256 _team_percent, uint256 _validator_percent, uint256 _all_percent) public onlyAdmin {
         require(_team_percent + _validator_percent <= _all_percent);
         team_percent = _team_percent;
         validator_percent = _validator_percent;
         all_percent = _all_percent;
     }
-
+    // @dev change max validator count
     function changeMaxValidatorCount(uint256 _max_validator_count) public onlyAdmin {
         max_validator_count = _max_validator_count;
     }
-
+    // @dev change validator pledge amount
     function changeValidatorMinPledgeAmount(uint256 _validator_min_pledgeAmount) public onlyAdmin {
         validator_pledgeAmount = _validator_min_pledgeAmount;
     }
-
+    // @dev get validator count
     function getAllValidatorLength() public view returns (uint256){
         return all_validators.length;
     }
     constructor(){
 
     }
+    // @dev Initialization parameters
     function initialize(address[]memory _init_validator, address _admin) external onlyNotInitialize {
         initialized = true;
         admin_address = _admin;
@@ -348,14 +387,14 @@ contract ValidatorFactory {
         }
 
     }
-
+    // @dev admin approve new validator state to produce block
     function changeValidatorState(address validator, ValidatorState _state) onlyAdmin public {
         owner_validator[validator].changeValidatorState(_state);
         if (_state == ValidatorState.Ready) {
             current_validator_count = current_validator_count + 1;
         }
     }
-
+    // @dev create new validator
     function createValidator() public payable returns (address){
         require(msg.value == validator_pledgeAmount, "ValidatorFactory: not enough value to be a validator");
         require(current_validator_count + 1 <= max_validator_count, "ValidatorFactory: cant register validator");
@@ -367,26 +406,26 @@ contract ValidatorFactory {
         all_validators.push(new_validator);
         return address(new_validator);
     }
-
+    // @dev add margin through factory
     function MarginCalls() public payable {
         require(owner_validator[msg.sender] != IValidator(address(0)), "ValidatorFactory : you account is not a validator");
         owner_validator[msg.sender].addMargin{value : msg.value}();
     }
-
+    // @dev remove validator from punish list
     function removeRankingList() public onlyValidator {
         IValidator _pool = IValidator(msg.sender);
         SortLinkedList.List storage _list = validatorPunishPools;
         _list.removeRanking(_pool);
     }
-
+    // @dev exit produce block
     function exitProduceBlock() public onlyValidator {
         current_validator_count--;
     }
-
+    // @dev get punish amount
     function getPunishAmount() public view returns (uint256){
         return validator_pledgeAmount * punish_percent / punish_all_percent;
     }
-
+    // @dev try to punish validator
     function tryPunish(address val) public
         //TODO for formal
     onlyMiner
@@ -405,7 +444,7 @@ contract ValidatorFactory {
             _cur = _valPunishPool.next[_cur];
         }
     }
-
+    // @dev get all validator in punish list
     function getAllPunishValidator() public view returns (address[] memory){
         address[] memory ret = new address[](validatorPunishPools.length);
         SortLinkedList.List storage _valPunishPool = validatorPunishPools;
@@ -417,7 +456,7 @@ contract ValidatorFactory {
         }
         return ret;
     }
-
+    // @dev get all validator address which can produce block
     function getAllActiveValidatorAddr() external view returns (address[] memory){
         uint256 _count = 0;
         for (uint256 i = 0; i < all_validators.length; i++) {
@@ -435,7 +474,7 @@ contract ValidatorFactory {
         }
         return ret;
     }
-
+    // @dev get all validator info which can produce block
     function getAllActiveValidator() public view returns (ValidatorInfo[] memory){
         uint256 _count = 0;
         for (uint256 i = 0; i < all_validators.length; i++) {
@@ -456,7 +495,7 @@ contract ValidatorFactory {
         }
         return ret;
     }
-
+    // @dev get all validator info
     function getAllValidator() public view returns (ValidatorInfo[] memory){
         ValidatorInfo[] memory ret = new ValidatorInfo[](all_validators.length);
         for (uint256 i = 0; i < all_validators.length; i++) {
@@ -467,7 +506,7 @@ contract ValidatorFactory {
         }
         return ret;
     }
-
+    // @dev get provider challenge info
     function getProviderChallengeInfo(address provider_owner) public view returns (providerChallengeInfo memory){
         uint256 current_index = provider_index[provider_owner];
         if (current_index != 0) {
@@ -476,7 +515,7 @@ contract ValidatorFactory {
         providerChallengeInfo memory new_info;
         return new_info;
     }
-
+    // @dev challenge provider
     function challengeProvider(address provider, uint256 md5_seed, string memory url) public
     onlyActiveValidator
     {
@@ -520,13 +559,13 @@ contract ValidatorFactory {
         provider_last_challenge_state[provider] = ChallengeState.Create;
         emit ChallengeCreate(provider, md5_seed, current);
     }
-
+    // @dev admin use to end error challenge state
     function changeValidatorChallengeState(address provider, uint256 index) public onlyAdmin {
         providerChallengeInfo storage _info = provider_challenge_info[provider][index];
         _info.state = ChallengeState.NotStart;
         provider_factory.changeProviderState(provider, false);
     }
-
+    // @dev recover challenge state if validator not submit challenge result
     function validatorNotSubmitResult(address provider) public {
         uint256 current_index = provider_index[provider];
         providerChallengeInfo storage _info = provider_challenge_info[provider][(current_index - 1) % 10];
@@ -538,7 +577,7 @@ contract ValidatorFactory {
         provider_last_challenge_state[provider] = ChallengeState.NotStart;
         emit ChallengeEnd(provider, current_index - 1);
     }
-
+    // @dev challenge finish
     function challengeFinish(address provider, uint256 seed, uint256 challenge_amount, uint256 root_hash, ChallengeState _state) public {
         uint256 current_index = provider_index[provider];
         providerChallengeInfo storage _info = provider_challenge_info[provider][(current_index - 1) % 10];
