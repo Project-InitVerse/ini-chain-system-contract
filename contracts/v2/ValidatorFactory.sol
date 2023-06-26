@@ -226,12 +226,12 @@ contract ValidatorFactory {
     uint256 public max_challenge_time;
     // max time for provider start challenge time default is 8 minutes
     uint256 public max_provider_start_challenge_time;
-    // punish item storage contract
-    address public validator_punish_item_address;
     //TODO:formal
     IProviderFactory public constant provider_factory = IProviderFactory(0x000000000000000000000000000000000000C003);
+    address public constant validator_punish_item_address = address(0x000000000000000000000000000000000000c004);
     //TODO:for test
     //IProviderFactory public provider_factory;
+    //address public validator_punish_item_address;
     uint256 public challenge_sdl_trx_id;
     // challenge create event
     event ChallengeCreate(address, uint256, uint256);
@@ -305,17 +305,17 @@ contract ValidatorFactory {
         _;
     }
     //TODO:for test
-//    function setProviderFactory(address _provider_factory) public onlyAdmin {
-//        provider_factory = IProviderFactory(_provider_factory);
-//    }
+//        function setProviderFactory(address _provider_factory) public onlyAdmin {
+//            provider_factory = IProviderFactory(_provider_factory);
+//        }
     // @dev change challenge sdl trx_id
     function changeChallengeSdlTrxID(uint256 _new_trx_id) public onlyAdmin {
         challenge_sdl_trx_id = _new_trx_id;
     }
-
-    function changeValidatorPunishItemAddr(address new_punish_item) public onlyAdmin {
-        validator_punish_item_address = new_punish_item;
-    }
+    //TODO : for test
+//        function changeValidatorPunishItemAddr(address new_punish_item) public onlyAdmin {
+//            validator_punish_item_address = new_punish_item;
+//        }
     // @dev change challenge param
     function changeMaxChallengeParam(uint256 _max_challenge_percent, uint256 _challenge_all_percent,
         uint256 _max_challenge_time, uint256 _max_provider_start_challenge_time) public onlyAdmin {
@@ -454,7 +454,7 @@ contract ValidatorFactory {
     // @dev try to punish validator
     function tryPunish(address val) public
         //TODO for formal
-        onlyMiner
+    onlyMiner
     {
         if (val != address(0)) {
             if (whiteList_validator[val] == IValidator(address(0))) {

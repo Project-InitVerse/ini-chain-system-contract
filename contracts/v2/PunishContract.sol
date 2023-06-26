@@ -11,9 +11,9 @@ contract PunishContract is IPunishContract {
     IValFactory public constant factory_address = IValFactory(0x000000000000000000000000000000000000c002);
     // TODO for test
     //IValFactory public factory_address;
-    uint256 public current_index;
+    uint256 public current_index = 0;
     constructor(){
-        current_index = 0;
+        //current_index = 0;
     }
     function newPunishItem(address owner, uint256 punish_amount, uint256 balance_left) external override {
         if(factory_address.getValidator(owner) != msg.sender){
@@ -32,6 +32,7 @@ contract PunishContract is IPunishContract {
     function getValidatorPunishLength(address val)external view returns(uint256){
         return validator_punish_items[val].length;
     }
+    //TODO for test
 //        function setFactoryAddr(address fac_addr) external {
 //            factory_address = IValFactory(fac_addr);
 //        }
