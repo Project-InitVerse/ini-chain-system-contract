@@ -17,4 +17,8 @@ interface IValFactory {
     function validator_punish_interval() external view returns (uint256);
 
     function validator_punish_start_limit() external view returns (uint256);
+
+    function validator_punish_item_address() external view returns (address);
+
+    function getValidator(address) external view returns (address);
 }

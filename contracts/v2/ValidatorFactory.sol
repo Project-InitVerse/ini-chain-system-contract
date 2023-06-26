@@ -6,6 +6,8 @@ import "./interface/IValidator.sol";
 import "./interface/IValFactory.sol";
 import "./library/SortList.sol";
 import "./interface/IProviderFactory.sol";
+import "./interface/IPunishContract.sol";
+import "hardhat/console.sol";
 
 contract Validator is Ownable, IValidator {
     //last punish time of validator
@@ -55,7 +57,7 @@ contract Validator is Ownable, IValidator {
     }
     // @dev only factory
     modifier onlyFactory(){
-        require(msg.sender == address(factory_address), "only factory call this function");
+        require(msg.sender == address(factory_address), "only factory");
         _;
     }
     // @dev change validator state
@@ -65,7 +67,7 @@ contract Validator is Ownable, IValidator {
     }
     // @dev add margin
     function addMargin() public payable override onlyFactory {
-        require(msg.value + pledge_amount <= (factory_address).validator_pledgeAmount(), "posMargin must less than max validator pledge amount");
+        require(msg.value + pledge_amount <= (factory_address).validator_pledgeAmount(), "posMargin<val pledge amount");
         require(msg.value > 0, "margin amount must above zero");
         last_margin_time = block.timestamp;
         pledge_amount += msg.value;
@@ -102,6 +104,9 @@ contract Validator is Ownable, IValidator {
                     if (_punishAmount > 0) {
                         pledge_amount = pledge_amount - (_punishAmount);
                         sendValue(payable((factory_address).punish_address()), _punishAmount);
+                        if (factory_address.validator_punish_item_address() != address(0)) {
+                            IPunishContract(factory_address.validator_punish_item_address()).newPunishItem(owner(), _punishAmount, pledge_amount);
+                        }
                         emit Punish(owner(), _punishAmount, pledge_amount);
                     }
                 }
@@ -126,6 +131,9 @@ contract Validator is Ownable, IValidator {
                     if (_punishAmount > 0) {
                         pledge_amount = pledge_amount - (_punishAmount);
                         sendValue(payable((factory_address).punish_address()), _punishAmount);
+                        if (factory_address.validator_punish_item_address() != address(0)) {
+                            IPunishContract(factory_address.validator_punish_item_address()).newPunishItem(owner(), _punishAmount, pledge_amount);
+                        }
                         emit Punish(owner(), _punishAmount, pledge_amount);
                     }
                     last_punish_time = block.timestamp;
@@ -134,6 +142,9 @@ contract Validator is Ownable, IValidator {
                     state = ValidatorState.Exit;
                     emit StateChange(owner(), uint256(state));
                     IValFactory(factory_address).exitProduceBlock();
+                    IValFactory(factory_address).removeRankingList();
+                    last_punish_time = 0;
+                    punish_start_time = 0;
                 }
             } else {
                 if (state == ValidatorState.Ready) {
@@ -215,6 +226,8 @@ contract ValidatorFactory {
     uint256 public max_challenge_time;
     // max time for provider start challenge time default is 8 minutes
     uint256 public max_provider_start_challenge_time;
+    // punish item storage contract
+    address public validator_punish_item_address;
     //TODO:formal
     IProviderFactory public constant provider_factory = IProviderFactory(0x000000000000000000000000000000000000C003);
     //TODO:for test
@@ -224,6 +237,8 @@ contract ValidatorFactory {
     event ChallengeCreate(address, uint256, uint256);
     // challenge end event
     event ChallengeEnd(address, uint256);
+    // create validator event
+    event ValidatorCreate(address);
     // provider challenge info
     mapping(address => providerChallengeInfo[]) public provider_challenge_info;
     // provider next challenge index
@@ -290,12 +305,16 @@ contract ValidatorFactory {
         _;
     }
     //TODO:for test
-    //    function setProviderFactory(address _provider_factory) public onlyAdmin{
-    //        provider_factory = IProviderFactory(_provider_factory);
-    //    }
+//    function setProviderFactory(address _provider_factory) public onlyAdmin {
+//        provider_factory = IProviderFactory(_provider_factory);
+//    }
     // @dev change challenge sdl trx_id
     function changeChallengeSdlTrxID(uint256 _new_trx_id) public onlyAdmin {
         challenge_sdl_trx_id = _new_trx_id;
+    }
+
+    function changeValidatorPunishItemAddr(address new_punish_item) public onlyAdmin {
+        validator_punish_item_address = new_punish_item;
     }
     // @dev change challenge param
     function changeMaxChallengeParam(uint256 _max_challenge_percent, uint256 _challenge_all_percent,
@@ -311,7 +330,7 @@ contract ValidatorFactory {
     }
     // @dev change punish percent
     function changePunishPercent(uint256 _new_punish_percent, uint256 _new_punish_all_percent) external onlyAdmin {
-        require(_new_punish_percent < _new_punish_all_percent, "all percent must bigger than punish percent");
+        require(_new_punish_percent <= _new_punish_all_percent, "all percent must bigger than punish percent");
         punish_percent = _new_punish_percent;
         punish_all_percent = _new_punish_all_percent;
     }
@@ -404,12 +423,17 @@ contract ValidatorFactory {
         Ownable(address(new_validator)).transferOwnership(msg.sender);
         owner_validator[msg.sender] = new_validator;
         all_validators.push(new_validator);
+        emit ValidatorCreate(address(new_validator));
         return address(new_validator);
     }
     // @dev add margin through factory
     function MarginCalls() public payable {
-        require(owner_validator[msg.sender] != IValidator(address(0)), "ValidatorFactory : you account is not a validator");
+        require(owner_validator[msg.sender] != IValidator(address(0)), "not val");
         owner_validator[msg.sender].addMargin{value : msg.value}();
+        if (owner_validator[msg.sender].state() == ValidatorState.Exit) {
+            owner_validator[msg.sender].changeValidatorState(ValidatorState.Ready);
+            current_validator_count = current_validator_count + 1;
+        }
     }
     // @dev remove validator from punish list
     function removeRankingList() public onlyValidator {
@@ -419,7 +443,9 @@ contract ValidatorFactory {
     }
     // @dev exit produce block
     function exitProduceBlock() public onlyValidator {
-        current_validator_count--;
+        if (current_validator_count > 0) {
+            current_validator_count--;
+        }
     }
     // @dev get punish amount
     function getPunishAmount() public view returns (uint256){
@@ -428,20 +454,27 @@ contract ValidatorFactory {
     // @dev try to punish validator
     function tryPunish(address val) public
         //TODO for formal
-    onlyMiner
+        onlyMiner
     {
         if (val != address(0)) {
             if (whiteList_validator[val] == IValidator(address(0))) {
-                require(owner_validator[val] != IValidator(address(0)), "ValidatorFactory: not validator");
+                require(owner_validator[val] != IValidator(address(0)), "not validator");
                 SortLinkedList.List storage _list = validatorPunishPools;
                 _list.improveRanking(owner_validator[val]);
             }
         }
         SortLinkedList.List storage _valPunishPool = validatorPunishPools;
+        IValidator[] memory temp = new IValidator[](_valPunishPool.length);
+        uint256 index = 0;
         IValidator _cur = _valPunishPool.head;
         while (_cur != IValidator(address(0))) {
-            _cur.punish();
+            //_cur.punish();
+            temp[index] = _cur;
             _cur = _valPunishPool.next[_cur];
+            index = index + 1;
+        }
+        for (uint256 i = 0; i < temp.length; i++) {
+            temp[i].punish();
         }
     }
     // @dev get all validator in punish list
@@ -453,6 +486,7 @@ contract ValidatorFactory {
         while (_cur != IValidator(address(0))) {
             ret[index] = Ownable(address(_cur)).owner();
             _cur = _valPunishPool.next[_cur];
+            index = index + 1;
         }
         return ret;
     }
@@ -522,13 +556,17 @@ contract ValidatorFactory {
         if (current_challenge_provider_count + 1 > provider_factory.getProviderInfoLength() * max_challenge_percent / challenge_all_percent) {
             return;
         }
+        providerChallengeInfo memory last_provider_info = getProviderChallengeInfo(provider);
+        if (last_provider_info.state == ChallengeState.Create) {
+            if ((block.timestamp >= last_provider_info.create_challenge_time + 2 * max_challenge_time) && last_provider_info.create_challenge_time != 0) {
+                validatorNotSubmitResult(provider);
+            }
+            return;
+        }
         if (!provider_factory.whetherCanPOR(provider)) {
             return;
         }
-        providerChallengeInfo memory last_provider_info = getProviderChallengeInfo(provider);
-        if (last_provider_info.state == ChallengeState.Create) {
-            return;
-        }
+
         uint256 current = provider_index[provider];
         providerChallengeInfo memory new_info;
         new_info.provider = provider;
@@ -590,14 +628,18 @@ contract ValidatorFactory {
         current_challenge_provider_count = current_challenge_provider_count - 1;
         provider_factory.changeProviderState(provider, false);
         if (_state == ChallengeState.Success) {
-            //TODO for test
+            //TODO for formal
             provider_factory.removePunishList(provider);
         }
         if (_state == ChallengeState.Fail) {
-            //TODO for test
+            //TODO for formal
             provider_factory.tryPunish(provider);
         }
         provider_last_challenge_state[provider] = _state;
         emit ChallengeEnd(provider, current_index - 1);
+    }
+
+    function getValidator(address val) external view returns (address){
+        return address(owner_validator[val]);
     }
 }

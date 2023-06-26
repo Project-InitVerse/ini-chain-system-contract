@@ -28,16 +28,27 @@ We use v2/ValidatorFactory.sol as the genesis contract for the chain validator
 ## Test
 for test you should do follow change in the contracts;
 - Remove comments
+
   v2/ValidatorFactory.sol:
-1. line 21
-2. line 45
-3. line 188
-4. line 247-249
+  1. line 23
+  2. line 55
+  3. line 232
+  4. line 306-308
+
+  v2/PunishContract.sol:
+  1. line 13
+  2. lin2 35-27
 - Add comments
+
   v2/ValidatorFactory.sol:
-1. line 19
-2. line 186
-3. line 364
+  1. line 21
+  2. line 230
+  3. line 454
+  4. line 632
+  5. line 636
+
+     v2/PunishContract.sol:
+  1. line 11
 ```
 yarn hardhat test ./test/v2/validator.ts
 ```
