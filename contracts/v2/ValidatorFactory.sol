@@ -7,7 +7,6 @@ import "./interface/IValFactory.sol";
 import "./library/SortList.sol";
 import "./interface/IProviderFactory.sol";
 import "./interface/IPunishContract.sol";
-import "hardhat/console.sol";
 
 contract Validator is Ownable, IValidator {
     //last punish time of validator
@@ -150,6 +149,9 @@ contract Validator is Ownable, IValidator {
                 if (state == ValidatorState.Ready) {
                     state = ValidatorState.Watch;
                     emit StateChange(owner(), uint256(state));
+                    punish_start_time = block.timestamp;
+                }
+                if (state == ValidatorState.Exit && punish_start_time == 0){
                     punish_start_time = block.timestamp;
                 }
             }
@@ -459,8 +461,10 @@ contract ValidatorFactory {
         if (val != address(0)) {
             if (whiteList_validator[val] == IValidator(address(0))) {
                 require(owner_validator[val] != IValidator(address(0)), "not validator");
-                SortLinkedList.List storage _list = validatorPunishPools;
-                _list.improveRanking(owner_validator[val]);
+                if(owner_validator[val].isProduceBlock()){
+                    SortLinkedList.List storage _list = validatorPunishPools;
+                    _list.improveRanking(owner_validator[val]);
+                }
             }
         }
         SortLinkedList.List storage _valPunishPool = validatorPunishPools;

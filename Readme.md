@@ -30,11 +30,11 @@ for test you should do follow change in the contracts;
 - Remove comments
 
   v2/ValidatorFactory.sol:
-  1. line 24
-  2. line 56
-  3. line 233-234
-  4. line 308-310
-  5. line 316-318
+  1. line 23
+  2. line 55
+  3. line 235-236
+  4. line 310-312
+  5. line 318-320
 
   v2/PunishContract.sol:
   1. line 13
@@ -42,11 +42,11 @@ for test you should do follow change in the contracts;
 - Add comments
 
   v2/ValidatorFactory.sol:
-  1. line 22
-  2. line 230-231
-  3. line 457
-  4. line 632
-  5. line 636
+  1. line 21
+  2. line 232-233
+  3. line 459
+  4. line 636
+  5. line 640
 
      v2/PunishContract.sol:
   1. line 11
