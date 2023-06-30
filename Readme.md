@@ -32,9 +32,10 @@ for test you should do follow change in the contracts;
   v2/ValidatorFactory.sol:
   1. line 23
   2. line 55
-  3. line 235-236
-  4. line 310-312
-  5. line 318-320
+  3. line 185-187
+  4. line 239-240
+  5. line 315-317
+  6. line 323-325
 
   v2/PunishContract.sol:
   1. line 13
@@ -43,10 +44,10 @@ for test you should do follow change in the contracts;
 
   v2/ValidatorFactory.sol:
   1. line 21
-  2. line 232-233
-  3. line 459
-  4. line 636
-  5. line 640
+  2. line 236-237
+  3. line 464
+  4. line 641
+  5. line 645
 
      v2/PunishContract.sol:
   1. line 11

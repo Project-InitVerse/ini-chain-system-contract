@@ -1,4 +1,4 @@
-import type { ValidatorFactory, Validator, MockProviderFactory } from "../../src/types";
+import type { ValidatorFactory, Validator, MockProviderFactory,Mockown } from "../../src/types";
 
 const { ethers, network } = require("hardhat");
 import { expect } from "chai";
@@ -26,6 +26,8 @@ describe("Validator test", function() {
     block = await ethers.provider.getBlock("latest");
     await this.punishItem.setFactoryAddr(this.valFactory.address);
     await this.valFactory.connect(admin).changeValidatorPunishItemAddr(this.punishItem.address);
+    this.mockown = await (await ethers.getContractFactory("Mockown")).deploy();
+    await this.mockown.setfactory(this.valFactory.address);
   });
   it("initialize check", async function() {
     expect(await this.valFactory.current_validator_count()).to.equal(5);
@@ -232,4 +234,17 @@ describe("Validator test", function() {
     challenge_info = await this.valFactory.provider_challenge_info(provider.address, (index - 1) % 10);
     expect(challenge_info.state).to.equal(2);
   });
+  it("fake owner",async function(){
+    await this.valFactory.connect(admin).changeValidatorMinPledgeAmount(ethers.utils.parseEther("1"))
+    expect(await this.valFactory.current_validator_count()).to.equal(5);
+    await this.valFactory.connect(validator1).createValidator({ value: ethers.utils.parseEther("1") });
+    await this.valFactory.connect(admin).changeValidatorState(validator1.address, 3);
+    let validator1_contract = await ethers.getContractAt("Validator", await this.valFactory.owner_validator(validator1.address));
+    await this.mockown.setOwner(validator1.address);
+    expect(await this.valFactory.current_validator_count()).to.equal(6);
+    await expect(this.mockown.mockAttack()).to.be.revertedWith("ValidatorFactory: only validator contract equal");
+    expect(await this.valFactory.current_validator_count()).to.equal(6);
+    await validator1_contract.testOwner();
+    expect(await this.valFactory.current_validator_count()).to.equal(5);
+  })
 });

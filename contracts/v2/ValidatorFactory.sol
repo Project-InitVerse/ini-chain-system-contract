@@ -181,6 +181,10 @@ contract Validator is Ownable, IValidator {
         info.punish_start_time = punish_start_time;
         return info;
     }
+    //TODO for test
+//    function testOwner()external{
+//        factory_address.exitProduceBlock();
+//    }
 }
 
 
@@ -304,6 +308,7 @@ contract ValidatorFactory {
     // @dev only validator
     modifier onlyValidator(){
         require(owner_validator[Ownable(msg.sender).owner()] != IValidator(address(0)), "ValidatorFactory: only validator contract use this function");
+        require(owner_validator[Ownable(msg.sender).owner()] == IValidator(msg.sender), "ValidatorFactory: only validator contract equal");
         _;
     }
     //TODO:for test
